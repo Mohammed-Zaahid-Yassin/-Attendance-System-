@@ -63,9 +63,27 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    engine: 'better-sqlite3 + node-cron'
+    engine: 'better-sqlite3 + node-cron',
+    theme: 'MVJCE Spotlight'
   });
 });
+
+// Serve Frontend in Production / Docker
+const fs = require('fs');
+const clientDistPath = fs.existsSync(path.join(__dirname, 'public', 'index.html'))
+  ? path.join(__dirname, 'public')
+  : path.join(__dirname, '../frontend/dist');
+
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+  console.log(`[Static] Serving frontend from: ${clientDistPath}`);
+}
 
 // Start Background Cron Engine
 startTokenRotator();

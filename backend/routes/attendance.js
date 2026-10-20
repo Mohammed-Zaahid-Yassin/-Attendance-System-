@@ -13,7 +13,7 @@ router.get('/token/current/:sessionId', (req, res) => {
     return res.status(400).json({ error: 'Invalid session ID' });
   }
 
-  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active FROM sessions WHERE id = ?').get(sessionId);
+  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -34,6 +34,8 @@ router.get('/token/current/:sessionId', (req, res) => {
     hour_number: session.hour_number,
     token: currentToken.token,
     unique_pin: currentToken.unique_pin,
+    pin_required: session.pin_required !== 0,
+    geo_fence_enabled: session.geo_fence_enabled === 1,
     expires_at: currentToken.expires_at,
     time_remaining_ms: currentToken.time_remaining_ms
   });
@@ -46,7 +48,7 @@ router.get('/token/qr/:sessionId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid session ID' });
   }
 
-  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active FROM sessions WHERE id = ?').get(sessionId);
+  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(sessionId);
   if (!session || !session.is_active) {
     return res.status(400).json({ error: 'Session is inactive or not found' });
   }
@@ -67,11 +69,11 @@ router.get('/token/qr/:sessionId', async (req, res) => {
     const scanUrl = `${clientOrigin}/scan?token=${encodeURIComponent(currentToken.token)}`;
 
     const qrDataUrl = await QRCode.toDataURL(scanUrl, {
-      errorCorrectionLevel: 'M',
+      errorCorrectionLevel: 'H',
       margin: 2,
-      width: 320,
+      width: 400,
       color: {
-        dark: '#0f172a',
+        dark: '#080605', // Deep obsidian matching Spotlight
         light: '#ffffff'
       }
     });
@@ -82,6 +84,8 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       hour_number: session.hour_number,
       token: currentToken.token,
       unique_pin: currentToken.unique_pin,
+      pin_required: session.pin_required !== 0,
+      geo_fence_enabled: session.geo_fence_enabled === 1,
       expires_at: currentToken.expires_at,
       time_remaining_ms: currentToken.time_remaining_ms,
       qr_code: qrDataUrl,
@@ -93,16 +97,41 @@ router.get('/token/qr/:sessionId', async (req, res) => {
   }
 });
 
+// Helper endpoint for student scan page to inspect token requirements
+router.get('/attendance/token-info', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Token is required' });
+
+  const tokenRow = db.prepare('SELECT * FROM qr_tokens WHERE token = ?').get(token.trim());
+  if (!tokenRow) {
+    return res.status(404).json({ error: 'Invalid or expired QR token' });
+  }
+
+  const session = db.prepare('SELECT id, subject_name, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(tokenRow.session_id);
+  if (!session || !session.is_active) {
+    return res.status(400).json({ error: 'Attendance session is no longer active' });
+  }
+
+  return res.json({
+    valid: true,
+    session_id: session.id,
+    subject_name: session.subject_name,
+    hour_number: session.hour_number,
+    pin_required: session.pin_required !== 0,
+    geo_fence_enabled: session.geo_fence_enabled === 1
+  });
+});
+
 // 3. Mark Attendance (Student Endpoint)
 router.post('/attendance/mark', (req, res) => {
   const { token, student_id, unique_pin, lat, lng } = req.body;
 
-  if (!token || !student_id || !unique_pin) {
-    return res.status(400).json({ error: 'Token, Student ID, and Unique PIN are required.' });
+  if (!token || !student_id) {
+    return res.status(400).json({ error: 'Token and Student ID are required.' });
   }
 
   const cleanStudentId = student_id.trim().toUpperCase();
-  const cleanPin = unique_pin.toString().trim();
+  const cleanPin = (unique_pin || '').toString().trim();
 
   // 1. Validate Token in SQLite
   const tokenRow = db.prepare('SELECT * FROM qr_tokens WHERE token = ?').get(token.trim());
@@ -112,25 +141,31 @@ router.post('/attendance/mark', (req, res) => {
 
   const now = Date.now();
   if (tokenRow.expires_at < now) {
-    return res.status(400).json({ error: 'This QR code token has expired (rotates every 18-20s). Please scan the latest code.' });
+    return res.status(400).json({ error: 'This QR code token has expired (rotates every 20s). Please scan the latest code.' });
   }
 
-  // 2. Validate Unique PIN
-  if (tokenRow.unique_pin !== cleanPin) {
-    return res.status(400).json({ error: 'Incorrect Unique PIN. Look at the screen and enter the current 6-digit PIN.' });
-  }
-
-  // 3. Validate Session
+  // 2. Validate Session
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(tokenRow.session_id);
   if (!session || session.is_active !== 1) {
     return res.status(400).json({ error: 'Attendance session is no longer active.' });
+  }
+
+  // 3. Validate Unique PIN if required by session
+  const isPinRequired = session.pin_required !== 0;
+  if (isPinRequired) {
+    if (!cleanPin) {
+      return res.status(400).json({ error: 'Please enter the 6-digit Unique PIN shown on the screen.' });
+    }
+    if (tokenRow.unique_pin !== cleanPin) {
+      return res.status(400).json({ error: 'Incorrect Unique PIN. Look at the auditorium display and enter the current 6-digit PIN.' });
+    }
   }
 
   // 4. Validate Student ID in SQLite roster
   const student = db.prepare('SELECT * FROM students WHERE student_id = ?').get(cleanStudentId);
   if (!student) {
     return res.status(404).json({
-      error: `Student ID "${cleanStudentId}" not found in roster. Make sure you registered via the official static QR.`
+      error: `Student ID "${cleanStudentId}" not found in roster. Make sure you registered via the official static QR code.`
     });
   }
 

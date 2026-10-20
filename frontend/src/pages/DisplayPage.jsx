@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  Clock, 
   Users, 
-  ShieldCheck, 
+  Clock, 
+  Maximize2, 
+  Minimize2, 
   Sparkles, 
-  BookOpen, 
-  Tv2, 
-  RefreshCw 
+  ShieldCheck, 
+  Tv, 
+  RotateCcw 
 } from 'lucide-react';
 
 export default function DisplayPage() {
@@ -15,8 +16,9 @@ export default function DisplayPage() {
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [tokenData, setTokenData] = useState(null);
   const [liveAttendanceCount, setLiveAttendanceCount] = useState(0);
-  const [secondsRemaining, setSecondsRemaining] = useState(20);
+  const [secondsRemaining, setSecondsRemaining] = useState(25);
   const [loading, setLoading] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 1. Fetch Active Sessions periodically
   useEffect(() => {
@@ -44,8 +46,6 @@ export default function DisplayPage() {
   useEffect(() => {
     if (!selectedSessionId) return;
 
-    let previousToken = null;
-
     const fetchToken = async () => {
       try {
         const [qrRes, liveRes] = await Promise.all([
@@ -57,16 +57,10 @@ export default function DisplayPage() {
         setTokenData(data);
         setLiveAttendanceCount(liveRes.data?.count || 0);
 
-        // Calculate seconds remaining
         if (data.expires_at) {
           const remainingSecs = Math.max(0, Math.ceil((data.expires_at - Date.now()) / 1000));
           setSecondsRemaining(remainingSecs);
         }
-
-        if (previousToken && previousToken !== data.token) {
-          // Token rotated!
-        }
-        previousToken = data.token;
       } catch (err) {
         console.error('Failed to fetch QR token', err);
       }
@@ -86,195 +80,183 @@ export default function DisplayPage() {
     };
   }, [selectedSessionId]);
 
-  // Active session object
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
   const currentSession = activeSessions.find((s) => s.id === selectedSessionId);
+  const progressPercent = Math.max(0, Math.min(100, (secondsRemaining / 25) * 100));
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <RefreshCw className="h-10 w-10 animate-spin text-brand-500" />
+      <div className="flex min-h-screen items-center justify-center bg-[#080605] text-[#f5f0ea]">
+        <div className="flex flex-col items-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500"></div>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#a39b94]">
+            Initializing Auditorium Display...
+          </p>
+        </div>
       </div>
     );
   }
 
   // No active session view
-  if (activeSessions.length === 0) {
+  if (!activeSessions.length || !currentSession) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 p-6 text-center text-white">
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-10 max-w-lg shadow-2xl backdrop-blur-xl">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-600/20 text-brand-400 ring-1 ring-brand-500/40">
-            <Tv2 className="h-10 w-10" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#080605] p-6 text-center text-[#f5f0ea]">
+        <div className="max-w-md rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
+            <Tv className="h-7 w-7" />
           </div>
-          <h1 className="mt-6 text-3xl font-black tracking-tight">No Active Class Session</h1>
-          <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-            There are currently no attendance sessions active. Please launch an attendance session from the <span className="font-semibold text-white">Admin Dashboard</span>.
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+            MVJ College of Engineering
           </p>
-          <a
-            href="/admin"
-            className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-brand-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-500/25 transition hover:bg-brand-500"
-          >
-            Go to Admin Dashboard
-          </a>
+          <h2 className="mt-1 font-serif text-2xl font-normal text-[#f5f0ea]">
+            Auditorium Projector Standby
+          </h2>
+          <p className="mt-3 text-xs leading-relaxed text-[#a39b94]">
+            No lecture or event session is currently active. The administrator can launch a session from the Admin Control Dashboard.
+          </p>
+          <div className="mt-6 rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-[11px] text-[#706860]">
+            Display screen auto-refreshes every 5 seconds to detect newly started sessions.
+          </div>
         </div>
       </div>
     );
   }
 
-  // Display Screen for Classroom Projector
-  const progressPercent = Math.min(100, Math.max(0, (secondsRemaining / 20) * 100));
+  const isPinRequired = tokenData?.pin_required !== false;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-6 lg:p-10 select-none">
-      {/* Top Bar: Subject, Hour & Session Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400 border border-emerald-500/20">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              LIVE ATTENDANCE SESSION
-            </span>
-            <span className="rounded-full bg-brand-500/10 px-3 py-1 text-xs font-bold text-brand-300 border border-brand-500/20">
-              Subject Hour {currentSession?.hour_number || 1} of 5
-            </span>
+    <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-8 select-none">
+      {/* Top Bar: MVJCE Branding + Session Selector + Fullscreen Button */}
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[rgba(255,235,215,0.08)] pb-5">
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
+                MVJ College of Engineering
+              </span>
+              <span className="text-amber-500">•</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-400">
+                Spotlight
+              </span>
+            </div>
+            <h1 className="font-serif text-xl sm:text-2xl font-normal text-[#f5f0ea]">
+              {currentSession.subject_name}{' '}
+              <span className="italic text-amber-400 font-normal">
+                (Hour {currentSession.hour_number})
+              </span>
+            </h1>
           </div>
-          <h1 className="mt-2 text-3xl lg:text-4xl font-black tracking-tight text-white">
-            {currentSession?.subject_name || 'Class Attendance'}
-          </h1>
-          {currentSession?.subject_code && (
-            <p className="text-sm font-medium text-slate-400">
-              Course Code: <span className="font-mono text-slate-200">{currentSession.subject_code}</span>
-            </p>
+        </div>
+
+        {/* Right Controls */}
+        <div className="flex items-center gap-3">
+          {activeSessions.length > 1 && (
+            <select
+              value={selectedSessionId || ''}
+              onChange={(e) => setSelectedSessionId(parseInt(e.target.value, 10))}
+              aria-label="Select active classroom session"
+              className="rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-1.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+            >
+              {activeSessions.map((s) => (
+                <option key={s.id} value={s.id} className="bg-[#120f0d]">
+                  Hour {s.hour_number}: {s.subject_name}
+                </option>
+              ))}
+            </select>
           )}
+
+          {/* Live Headcount Pill */}
+          <div className="flex items-center gap-2 rounded-full border border-[rgba(240,150,80,0.25)] bg-[#18130e] px-4 py-2 text-xs">
+            <Users className="h-4 w-4 text-amber-400" />
+            <span className="font-mono text-sm font-bold text-[#f5f0ea]">{liveAttendanceCount}</span>
+            <span className="text-[#a39b94] text-[11px] uppercase tracking-wider">Recorded</span>
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label="Toggle Fullscreen"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] text-[#a39b94] transition hover:border-amber-500 hover:text-amber-400 focus-visible:outline-none"
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
         </div>
+      </header>
 
-        {/* Multi-session hour switcher if multiple are active */}
-        {activeSessions.length > 1 && (
-          <div className="flex items-center gap-2 rounded-2xl bg-slate-900 p-1.5 border border-slate-800">
-            {activeSessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setSelectedSessionId(s.id)}
-                className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
-                  selectedSessionId === s.id
-                    ? 'bg-brand-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Hour {s.hour_number}: {s.subject_name.slice(0, 14)}...
-              </button>
-            ))}
+      {/* Main Display Area */}
+      <main className="my-auto py-6 sm:py-10">
+        <div className="mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-10 items-center justify-center">
+          {/* QR Code Card */}
+          <div className="flex flex-col items-center text-center">
+            <div className="relative rounded-3xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl">
+              {tokenData?.qr_code ? (
+                <img
+                  src={tokenData.qr_code}
+                  alt="Attendance QR Code"
+                  className="h-64 w-64 sm:h-72 sm:w-72 rounded-2xl bg-white p-3 shadow-inner object-contain"
+                />
+              ) : (
+                <div className="h-64 w-64 sm:h-72 sm:w-72 flex items-center justify-center rounded-2xl bg-[#181512]">
+                  <RotateCcw className="h-8 w-8 animate-spin text-amber-400" />
+                </div>
+              )}
+            </div>
           </div>
-        )}
 
-        {/* Live Attendance Counter */}
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-5 py-3 shadow-xl">
-          <div className="rounded-xl bg-brand-500/10 p-2.5 text-brand-400">
-            <Users className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="text-2xl font-black text-white">{liveAttendanceCount}</div>
-            <div className="text-xs font-medium text-slate-400">Students Logged</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Display: Dynamic QR Code + Large Unique PIN */}
-      <div className="my-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center max-w-6xl mx-auto w-full py-6">
-        {/* Left Column: Rotating Dynamic QR Code */}
-        <div className="lg:col-span-6 flex flex-col items-center justify-center">
-          <div className="relative rounded-3xl border-2 border-brand-500/40 bg-white p-5 shadow-2xl shadow-brand-500/10">
-            {tokenData?.qr_code ? (
-              <img
-                src={tokenData.qr_code}
-                alt="Dynamic Classroom QR"
-                className="h-72 w-72 sm:h-80 sm:w-80 rounded-2xl object-contain transition-all duration-300"
-              />
-            ) : (
-              <div className="flex h-72 w-72 sm:h-80 sm:w-80 items-center justify-center text-slate-400">
-                <RefreshCw className="h-10 w-10 animate-spin text-brand-600" />
+          {/* Right Column: Screen PIN (if active) + Rotation Countdown Timer */}
+          <div className="flex flex-col space-y-6 w-full">
+            {isPinRequired && (
+              <div className="w-full rounded-3xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 sm:p-10 shadow-2xl text-center md:text-left">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
+                  Screen PIN
+                </span>
+                <div className="mt-4 font-mono text-5xl sm:text-7xl font-black tracking-[0.2em] text-amber-400">
+                  {tokenData?.unique_pin || '••••••'}
+                </div>
               </div>
             )}
-            <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-600 uppercase tracking-widest">
-              <Sparkles className="h-3 w-3 text-brand-600" />
-              Auto-Rotates Every 18–20s
+
+            {/* Rotation Countdown Bar (25s) */}
+            <div className="w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 shadow-xl">
+              <div className="flex items-center justify-between text-xs mb-3">
+                <span className="flex items-center gap-1.5 text-[#a39b94] uppercase tracking-wider text-[11px]">
+                  <Clock className="h-3.5 w-3.5 text-amber-400" />
+                  Next QR Rotation:
+                </span>
+                <span className="font-mono font-bold text-amber-400 text-sm">
+                  {secondsRemaining}s
+                </span>
+              </div>
+
+              {/* Progress track */}
+              <div className="h-2 w-full overflow-hidden rounded-full bg-[#181512]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000 ease-linear shadow-amber-glow"
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
+              </div>
             </div>
           </div>
-
-          {/* Rotation Countdown Bar */}
-          <div className="mt-6 w-full max-w-xs">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1.5">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" /> Next Refresh:
-              </span>
-              <span className="font-mono text-brand-400">{secondsRemaining}s</span>
-            </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-brand-500 to-emerald-400 transition-all duration-1000 ease-linear"
-                style={{ width: `${progressPercent}%` }}
-              ></div>
-            </div>
-          </div>
         </div>
 
-        {/* Right Column: Unique PIN & Instructions */}
-        <div className="lg:col-span-6 space-y-6 text-center lg:text-left">
-          {/* Unique PIN Display Box */}
-          <div className="rounded-3xl border border-brand-500/40 bg-gradient-to-br from-brand-950/80 via-slate-900 to-indigo-950 p-6 sm:p-8 shadow-2xl">
-            <div className="text-xs font-bold uppercase tracking-widest text-brand-300">
-              Current Unique PIN
-            </div>
-            <div className="mt-3 text-6xl sm:text-7xl font-black tracking-widest text-white font-mono selection:bg-brand-500">
-              {tokenData?.unique_pin || '------'}
-            </div>
-            <p className="mt-3 text-xs text-slate-300">
-              Enter this 6-digit PIN together with your Student ID after scanning the QR.
-            </p>
-          </div>
+        {/* Student Instruction */}
+        <p className="mt-8 text-center text-xs text-[#a39b94]">
+          Scan the QR code using your mobile camera {isPinRequired ? 'and enter the screen PIN ' : ''}to mark attendance.
+        </p>
+      </main>
 
-          {/* Student Instructions */}
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 space-y-3.5 text-left">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
-              How to Mark Attendance:
-            </h3>
-            <ol className="space-y-3 text-xs sm:text-sm text-slate-300">
-              <li className="flex items-start gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 font-bold text-white text-xs">
-                  1
-                </span>
-                <span>Scan the dynamic QR code on the left using your smartphone camera.</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 font-bold text-white text-xs">
-                  2
-                </span>
-                <span>
-                  Enter your official <strong className="text-white">Student ID</strong> (e.g. <span className="font-mono text-brand-300">ABCD1234</span>).
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 font-bold text-white text-xs">
-                  3
-                </span>
-                <span>
-                  Enter the <strong className="text-white">Unique PIN</strong> ({tokenData?.unique_pin || '...'}) and tap Submit.
-                </span>
-              </li>
-            </ol>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer Info */}
-      <div className="border-t border-slate-800/80 pt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-400" />
-          <span>Anti-Proxy Protection Active — QR rotates every 18-20s • Single Entry per Student</span>
-        </div>
-        <div>
-          <span>Powered by SQLite + node-cron</span>
-        </div>
-      </div>
+      {/* Footer Notice */}
+      <footer className="border-t border-[rgba(255,235,215,0.06)] pt-4 text-center text-[11px] text-[#706860]">
+        MVJ College of Engineering • Departmental Lecture & Event Attendance System
+      </footer>
     </div>
   );
 }

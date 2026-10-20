@@ -42,9 +42,9 @@ router.post('/register', (req, res) => {
     return res.status(403).json({ error: 'Access Denied: Registration is only accessible via the official Admin Static QR code.' });
   }
 
-  // Validate fields
-  if (!name || !usn || !department || !year || !mobile) {
-    return res.status(400).json({ error: 'Name, USN, Department, Year, and Mobile Number are required.' });
+  // Basic field checks
+  if (!name || !usn || !year || !mobile) {
+    return res.status(400).json({ error: 'Name, USN / Admission Number, Year of Study, and Mobile Number are required.' });
   }
 
   const numYear = parseInt(year, 10);
@@ -54,11 +54,19 @@ router.post('/register', (req, res) => {
 
   // Cycle check: Only applicable and mandatory for 1st years
   let studentCycle = null;
+  let finalDepartment = (department || '').trim();
+
   if (numYear === 1) {
     if (!cycle || (cycle !== 'Physics' && cycle !== 'Chemistry' && cycle !== 'Physics Cycle' && cycle !== 'Chemistry Cycle')) {
-      return res.status(400).json({ error: 'First year students must specify Cycle (Physics or Chemistry).' });
+      return res.status(400).json({ error: 'First year students must specify Cycle (Physics Cycle or Chemistry Cycle).' });
     }
-    studentCycle = cycle.includes('Physics') ? 'Physics' : 'Chemistry';
+    studentCycle = cycle.includes('Physics') ? 'Physics Cycle' : 'Chemistry Cycle';
+    finalDepartment = `Basic Sciences (${studentCycle})`;
+  } else {
+    // 2nd, 3rd, 4th year require Department
+    if (!finalDepartment) {
+      return res.status(400).json({ error: 'Please select your Engineering Department.' });
+    }
   }
 
   // Mobile validation
@@ -100,7 +108,7 @@ router.post('/register', (req, res) => {
     insertStmt.run(
       name.trim(),
       usn.trim().toUpperCase(),
-      department.trim(),
+      finalDepartment,
       numYear,
       studentCycle,
       cleanMobile,
@@ -114,7 +122,7 @@ router.post('/register', (req, res) => {
         student_id: studentId,
         name: name.trim(),
         usn: usn.trim().toUpperCase(),
-        department: department.trim(),
+        department: finalDepartment,
         year: numYear,
         cycle: studentCycle,
         mobile: cleanMobile

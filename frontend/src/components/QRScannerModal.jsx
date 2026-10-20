@@ -22,9 +22,7 @@ export default function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
         { facingMode: 'environment' },
         qrConfig,
         (decodedText) => {
-          // Success callback
           try {
-            // Extract token from URL or text
             let token = decodedText;
             if (decodedText.includes('token=')) {
               const url = new URL(decodedText);
@@ -47,9 +45,7 @@ export default function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
             onClose();
           }
         },
-        () => {
-          // Frame error (ignore scanning frames)
-        }
+        () => {}
       )
       .then(() => {
         setIsStarting(false);
@@ -74,54 +70,56 @@ export default function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3">
           <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-brand-50 p-2 text-brand-600">
+            <div className="rounded-lg bg-amber-500/10 p-2 text-amber-400">
               <Camera className="h-5 w-5" />
             </div>
-            <h3 className="font-bold text-slate-800">Scan Classroom QR</h3>
+            <h3 className="font-serif text-lg font-normal text-[#f5f0ea]">
+              Scan Screen QR
+            </h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-full p-1.5 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {errorMsg ? (
-          <div className="my-4 rounded-xl border border-red-200 bg-red-50 p-4 text-center">
-            <AlertCircle className="mx-auto mb-2 h-8 w-8 text-red-500" />
-            <p className="text-sm font-medium text-red-700">{errorMsg}</p>
-            <p className="mt-2 text-xs text-red-600">
-              You can also use your phone's default camera app to scan the QR code.
+          <div className="my-4 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-center">
+            <AlertCircle className="mx-auto mb-2 h-7 w-7 text-red-400" />
+            <p className="text-xs font-medium text-red-300">{errorMsg}</p>
+            <p className="mt-2 text-[11px] text-[#a39b94]">
+              You can also open your smartphone's built-in camera app to scan the QR code.
             </p>
           </div>
         ) : (
           <div>
             <div
               id="qr-reader-container"
-              className="overflow-hidden rounded-xl border-2 border-dashed border-brand-200 bg-slate-900"
-              style={{ minHeight: '300px' }}
+              className="overflow-hidden rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#080605]"
+              style={{ minHeight: '280px' }}
             ></div>
             {isStarting && (
-              <p className="mt-3 text-center text-xs text-slate-500 animate-pulse">
+              <p className="mt-3 text-center text-[11px] text-[#a39b94] animate-pulse">
                 Initializing camera feed...
               </p>
             )}
-            <p className="mt-3 text-center text-xs text-slate-500">
-              Point your camera at the dynamic QR code displayed on the classroom screen.
+            <p className="mt-3 text-center text-[11px] text-[#706860]">
+              Align camera with the dynamic QR code displayed on the auditorium projector screen.
             </p>
           </div>
         )}
 
         <button
           onClick={onClose}
-          className="mt-4 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+          className="mt-4 w-full rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] py-2.5 text-xs font-semibold uppercase tracking-wider text-[#f5f0ea] hover:bg-[#201c18]"
         >
-          Close
+          Cancel
         </button>
       </div>
     </div>

@@ -6,8 +6,11 @@ require('dotenv').config();
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'attendance.db');
 const db = new Database(dbPath);
 
-// Enable WAL mode for better concurrency and performance
+// Enable WAL mode & high-performance concurrency settings for 1200+ attendees
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -64000'); // 64MB memory cache
+db.pragma('temp_store = MEMORY');
 db.pragma('foreign_keys = ON');
 
 // Initialize database tables
@@ -27,7 +30,7 @@ function initDb() {
     );
   `);
 
-  // Sessions Table (supports 5 subjects / hours)
+  // Sessions Table (supports 5 subjects / hours, 4-corner polygon geofence, and PIN requirement toggle)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,9 +44,27 @@ function initDb() {
       geo_fence_enabled INTEGER DEFAULT 0,
       geo_lat REAL,
       geo_lng REAL,
-      geo_radius_m INTEGER DEFAULT 100
+      geo_radius_m INTEGER DEFAULT 100,
+      geo_corners TEXT,
+      pin_required INTEGER DEFAULT 1
     );
   `);
+
+  // Run dynamic schema migrations for existing database files
+  try {
+    const sessionCols = db.prepare(`PRAGMA table_info(sessions)`).all().map(c => c.name);
+    if (!sessionCols.includes('hour_number')) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN hour_number INTEGER DEFAULT 1`);
+    }
+    if (!sessionCols.includes('geo_corners')) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN geo_corners TEXT`);
+    }
+    if (!sessionCols.includes('pin_required')) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN pin_required INTEGER DEFAULT 1`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration]', migErr);
+  }
 
   // QR Tokens Table (rotates every 18-20s)
   db.exec(`
@@ -72,6 +93,15 @@ function initDb() {
       UNIQUE(session_id, student_id),
       FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
     );
+  `);
+
+  // Performance Indexes for fast lookups with 1200+ participants
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_attendance_session ON attendance(session_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
+    CREATE INDEX IF NOT EXISTS idx_tokens_token ON qr_tokens(token);
+    CREATE INDEX IF NOT EXISTS idx_students_student_id ON students(student_id);
+    CREATE INDEX IF NOT EXISTS idx_students_usn ON students(usn);
   `);
 
   // Admins Table

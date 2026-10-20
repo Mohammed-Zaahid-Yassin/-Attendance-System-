@@ -8,11 +8,10 @@ import {
   Trash2, 
   UserPlus, 
   RefreshCw, 
-  CheckCircle, 
-  AlertCircle, 
-  MapPin, 
-  ShieldCheck, 
-  Radio 
+  Radio,
+  MapPin,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 export default function LiveAttendance() {
@@ -37,7 +36,7 @@ export default function LiveAttendance() {
     headers: { Authorization: `Bearer ${token}` }
   };
 
-  // 1. Fetch all sessions for selector
+  // 1. Fetch all sessions for dropdown selector
   useEffect(() => {
     const fetchSessions = async () => {
       try {
@@ -46,7 +45,6 @@ export default function LiveAttendance() {
         setSessions(list);
 
         if (!selectedSessionId && list.length > 0) {
-          // Default to first active session, or first session
           const active = list.find((s) => s.is_active === 1) || list[0];
           setSelectedSessionId(String(active.id));
         }
@@ -61,42 +59,41 @@ export default function LiveAttendance() {
   useEffect(() => {
     if (!selectedSessionId) return;
 
-    setSearchParams({ session: selectedSessionId });
-
-    const fetchLiveFeed = async () => {
+    const fetchAttendance = async () => {
       try {
         const res = await axios.get(`/api/attendance/live/${selectedSessionId}`);
         setSessionData(res.data.session);
         setRecords(res.data.records || []);
         setLastUpdated(new Date().toLocaleTimeString());
       } catch (err) {
-        console.error('Failed to fetch live attendance', err);
+        console.error('Failed to poll attendance', err);
       }
     };
 
-    fetchLiveFeed();
+    fetchAttendance();
 
-    if (!isLivePolling) return;
-    const interval = setInterval(fetchLiveFeed, 2500);
-    return () => clearInterval(interval);
+    if (isLivePolling) {
+      const interval = setInterval(fetchAttendance, 2500);
+      return () => clearInterval(interval);
+    }
   }, [selectedSessionId, isLivePolling]);
 
-  // Handle Delete Attendance Record
-  const handleDeleteRecord = async (attendanceId, studentName) => {
-    if (!window.confirm(`Are you sure you want to remove attendance for ${studentName}?`)) return;
-
-    try {
-      await axios.delete(`/api/admin/attendance/${attendanceId}`, axiosConfig);
-      setRecords((prev) => prev.filter((r) => r.id !== attendanceId));
-    } catch (err) {
-      alert('Failed to delete attendance record: ' + (err.response?.data?.error || err.message));
-    }
+  // Export CSV
+  const handleExportCSV = () => {
+    if (!selectedSessionId) return;
+    const exportUrl = `/api/attendance/export/${selectedSessionId}`;
+    const link = document.createElement('a');
+    link.href = exportUrl;
+    link.setAttribute('download', '');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
-  // Handle Manual Attendance Mark (for students with phone issues)
+  // Manual Override: Mark student attendance manually
   const handleManualMark = async (e) => {
     e.preventDefault();
-    if (!manualStudentId.trim() || !selectedSessionId) return;
+    if (!manualStudentId.trim()) return;
 
     setManualLoading(true);
     setManualMsg('');
@@ -106,217 +103,238 @@ export default function LiveAttendance() {
         '/api/admin/attendance/manual-mark',
         {
           session_id: parseInt(selectedSessionId, 10),
-          student_id: manualStudentId.trim()
+          student_id: manualStudentId.trim().toUpperCase()
         },
         axiosConfig
       );
-      setManualMsg(res.data.message);
+
+      setManualMsg(res.data.message || 'Attendance manually marked!');
       setManualStudentId('');
-      // Refresh
-      const liveRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
-      setRecords(liveRes.data.records || []);
+
+      // Refresh records
+      const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
+      setRecords(freshRes.data.records || []);
     } catch (err) {
-      setManualMsg(err.response?.data?.error || 'Failed to mark attendance manually');
+      setManualMsg(err.response?.data?.error || 'Failed to mark student manually');
     } finally {
       setManualLoading(false);
     }
   };
 
-  // Handle CSV Export (SQLite-driven)
-  const handleExportCSV = () => {
-    if (!selectedSessionId) return;
-    window.open(`/api/attendance/export/${selectedSessionId}`, '_blank');
+  // Delete attendance entry
+  const handleDeleteRecord = async (attendanceId) => {
+    if (!window.confirm('Are you sure you want to remove this attendance record?')) return;
+    try {
+      await axios.delete(`/api/admin/attendance/${attendanceId}`, axiosConfig);
+      setRecords((prev) => prev.filter((r) => r.id !== attendanceId));
+    } catch (err) {
+      alert('Failed to delete attendance record: ' + (err.response?.data?.error || err.message));
+    }
   };
 
-  // Filtered records by search term
+  // Filter records by search
   const filteredRecords = records.filter((r) => {
-    const term = searchTerm.toLowerCase();
+    const s = searchTerm.toLowerCase();
     return (
-      r.name?.toLowerCase().includes(term) ||
-      r.student_id?.toLowerCase().includes(term) ||
-      r.usn?.toLowerCase().includes(term) ||
-      r.department?.toLowerCase().includes(term)
+      (r.name || '').toLowerCase().includes(s) ||
+      (r.student_id || '').toLowerCase().includes(s) ||
+      (r.usn || '').toLowerCase().includes(s) ||
+      (r.department || '').toLowerCase().includes(s)
     );
   });
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[rgba(255,235,215,0.08)] pb-5">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                Live Attendance Table
-              </h1>
-              {sessionData?.is_active === 1 && (
-                <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400 border border-emerald-500/20">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  STREAMING LIVE
-                </span>
-              )}
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
+                MVJ College of Engineering
+              </span>
+              <span className="text-amber-500">•</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-500">
+                Attendance Registry
+              </span>
             </div>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Real-time synchronization with active QR scans. Detect errors and edit on the fly.
-            </p>
+            <h1 className="font-serif text-3xl font-normal text-[#f5f0ea] mt-1">
+              Live <span className="italic text-amber-400">Attendance Feed.</span>
+            </h1>
           </div>
 
-          {/* Action Buttons: Pause Polling, Export CSV */}
-          <div className="flex items-center gap-2">
+          {/* Export CSV & Polling Status */}
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setIsLivePolling(!isLivePolling)}
-              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold border transition ${
+              className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider transition ${
                 isLivePolling
-                  ? 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
-                  : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                  : 'border-[rgba(255,235,215,0.12)] bg-[#181512] text-[#a39b94]'
               }`}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLivePolling ? 'animate-spin' : ''}`} />
-              {isLivePolling ? 'Live Sync Active' : 'Sync Paused'}
+              <Radio className={`h-3.5 w-3.5 ${isLivePolling ? 'animate-pulse' : ''}`} />
+              <span>{isLivePolling ? 'Live Feed ON' : 'Paused'}</span>
             </button>
 
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-500 transition"
+              disabled={!records.length}
+              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-40"
             >
               <Download className="h-3.5 w-3.5" />
-              Export CSV (SQLite)
+              <span>Export CSV (SQLite)</span>
             </button>
           </div>
         </div>
 
-        {/* Controls: Session Dropdown & Search & Manual Entry */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          {/* Session Selector */}
-          <div className="md:col-span-5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Select Subject Session
-            </label>
-            <select
-              value={selectedSessionId}
-              onChange={(e) => setSelectedSessionId(e.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none"
-            >
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.is_active ? '🟢 [LIVE] ' : '⚪ [CLOSED] '} Hour {s.hour_number}: {s.subject_name} ({new Date(s.started_at).toLocaleDateString()})
-                </option>
-              ))}
-            </select>
+        {/* Session Selector & Manual Mark Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Session Picker & Stats */}
+          <div className="lg:col-span-2 rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  Select Classroom / Event Session:
+                </label>
+                <select
+                  value={selectedSessionId}
+                  onChange={(e) => {
+                    setSelectedSessionId(e.target.value);
+                    setSearchParams({ session: e.target.value });
+                  }}
+                  className="rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-2.5 text-sm text-[#f5f0ea] focus:border-amber-500 focus:outline-none min-w-[280px]"
+                >
+                  {sessions.map((s) => (
+                    <option key={s.id} value={s.id} className="bg-[#120f0d]">
+                      {s.is_active ? '🟢 [LIVE] ' : '⚪ '}Hour {s.hour_number}: {s.subject_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {sessionData && (
+                <div className="flex items-center gap-4 text-xs">
+                  <div>
+                    <span className="text-[#a39b94] block text-[10px] uppercase">Headcount</span>
+                    <span className="font-mono text-2xl font-bold text-amber-400">
+                      {records.length}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#a39b94] block text-[10px] uppercase">Last Polled</span>
+                    <span className="font-mono text-xs text-[#f5f0ea]">
+                      {lastUpdated || 'Connecting...'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Table Search */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Search Present Students
-            </label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+          {/* Right: Manual Attendance Override */}
+          <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-400 mb-2">
+              <UserPlus className="h-4 w-4" />
+              <span>Manual Attendance Override</span>
+            </div>
+            <form onSubmit={handleManualMark} className="space-y-2">
               <input
                 type="text"
-                placeholder="Search name, USN, or Student ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-900 pl-10 pr-4 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Real-time Status Card */}
-          <div className="md:col-span-3 flex flex-col justify-end">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 flex items-center justify-between text-xs text-slate-400">
-              <span>Total Marked: <strong className="text-brand-400 font-mono text-sm">{records.length}</strong></span>
-              <span>Updated: {lastUpdated || '...'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Manual Mark Bar (For broken phones / error correction) */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <UserPlus className="h-4 w-4 text-brand-400" />
-              <span className="text-xs font-bold text-white">Manual Attendance Override</span>
-              <span className="text-[11px] text-slate-400">(In case student device had battery/network error)</span>
-            </div>
-            <form onSubmit={handleManualMark} className="flex items-center gap-2 w-full sm:w-auto">
-              <input
-                type="text"
-                placeholder="Enter Student ID (e.g. ABCD1234)"
+                placeholder="Student ID (e.g. ARJU3210)"
                 value={manualStudentId}
                 onChange={(e) => setManualStudentId(e.target.value.toUpperCase())}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-1.5 text-xs text-white uppercase font-mono focus:border-brand-500 focus:outline-none"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
               />
               <button
                 type="submit"
-                disabled={manualLoading}
-                className="rounded-xl bg-brand-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-brand-500 transition disabled:opacity-50"
+                disabled={manualLoading || !manualStudentId.trim()}
+                className="w-full rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2 text-xs font-semibold uppercase tracking-wider text-amber-400 hover:bg-amber-500/20 transition disabled:opacity-40"
               >
-                {manualLoading ? 'Marking...' : 'Mark Present'}
+                {manualLoading ? 'Marking...' : 'Add Attendance'}
               </button>
             </form>
+            {manualMsg && (
+              <p className="mt-2 text-[11px] text-[#a39b94]">{manualMsg}</p>
+            )}
           </div>
-          {manualMsg && (
-            <p className="mt-2 text-xs font-medium text-brand-300">{manualMsg}</p>
-          )}
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#706860]" />
+          <input
+            type="text"
+            placeholder="Search attendees by Name, Student ID, USN, or Department..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] pl-11 pr-4 py-3 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+          />
         </div>
 
         {/* Live Attendance Table */}
-        <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/90 shadow-2xl">
+        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-800/60 text-slate-400 uppercase text-[11px] font-bold tracking-wider">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="p-4">#</th>
-                  <th className="p-4">Student Name</th>
-                  <th className="p-4">Student ID</th>
-                  <th className="p-4">USN / Admission No</th>
-                  <th className="p-4">Department</th>
-                  <th className="p-4">Year / Cycle</th>
-                  <th className="p-4">Time Logged</th>
-                  <th className="p-4">Geofence</th>
-                  <th className="p-4 text-right">Actions</th>
+                  <th className="px-5 py-3.5 font-semibold">#</th>
+                  <th className="px-5 py-3.5 font-semibold">Student Name</th>
+                  <th className="px-5 py-3.5 font-semibold">Student ID</th>
+                  <th className="px-5 py-3.5 font-semibold">USN</th>
+                  <th className="px-5 py-3.5 font-semibold">Department / Cycle</th>
+                  <th className="px-5 py-3.5 font-semibold">Year</th>
+                  <th className="px-5 py-3.5 font-semibold">Time Marked</th>
+                  <th className="px-5 py-3.5 font-semibold">GPS Verified</th>
+                  <th className="px-5 py-3.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-[rgba(255,235,215,0.06)] text-[#f5f0ea]">
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-500">
-                      {searchTerm
-                        ? 'No students matching your search criteria.'
-                        : 'No attendance records logged yet for this session.'}
+                    <td colSpan={9} className="px-5 py-8 text-center text-[#706860] text-xs">
+                      {records.length === 0
+                        ? 'No attendance records logged yet for this session.'
+                        : 'No records matching your search.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredRecords.map((r, index) => (
-                    <tr key={r.id} className="hover:bg-slate-800/40 transition">
-                      <td className="p-4 font-mono text-xs text-slate-500">{index + 1}</td>
-                      <td className="p-4 font-semibold text-white">{r.name}</td>
-                      <td className="p-4 font-mono font-bold text-brand-400">{r.student_id}</td>
-                      <td className="p-4 font-mono text-xs text-slate-300">{r.usn}</td>
-                      <td className="p-4 text-xs text-slate-300">{r.department}</td>
-                      <td className="p-4 text-xs">
-                        Year {r.year} {r.cycle ? `(${r.cycle})` : ''}
+                  filteredRecords.map((r, i) => (
+                    <tr key={r.id} className="hover:bg-[#181512]/60 transition">
+                      <td className="px-5 py-3.5 font-mono text-[#706860]">{i + 1}</td>
+                      <td className="px-5 py-3.5 font-medium">{r.name}</td>
+                      <td className="px-5 py-3.5 font-mono font-bold text-amber-400">
+                        {r.student_id}
                       </td>
-                      <td className="p-4 text-xs text-slate-400">
+                      <td className="px-5 py-3.5 font-mono text-[#a39b94]">{r.usn}</td>
+                      <td className="px-5 py-3.5 text-[#a39b94]">
+                        {r.year === 1 && r.cycle ? `${r.cycle}` : r.department}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="rounded-full border border-[rgba(255,235,215,0.1)] px-2.5 py-0.5 text-[10px] font-mono text-[#a39b94]">
+                          Yr {r.year}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 font-mono text-[#a39b94]">
                         {new Date(r.marked_at).toLocaleTimeString()}
                       </td>
-                      <td className="p-4 text-xs">
+                      <td className="px-5 py-3.5">
                         {r.geo_verified ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-400">
-                            <ShieldCheck className="h-3.5 w-3.5" /> Verified
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Inside
                           </span>
                         ) : (
-                          <span className="text-slate-500">Standard</span>
+                          <span className="text-[11px] text-[#706860]">Bypassed</span>
                         )}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="px-5 py-3.5 text-right">
                         <button
-                          onClick={() => handleDeleteRecord(r.id, r.name)}
-                          title="Remove error record"
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition"
+                          type="button"
+                          onClick={() => handleDeleteRecord(r.id)}
+                          className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/10 transition"
+                          title="Remove record"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </td>
                     </tr>

@@ -37,8 +37,19 @@ router.get('/stats', (req, res) => {
 });
 
 // 2. Start a New Class/Subject Session (1 to 5 hours)
+// 2. Start a New Class/Subject Session (1 to 5 hours)
 router.post('/sessions/start', (req, res) => {
-  const { subject_name, subject_code, hour_number, geo_fence_enabled, geo_lat, geo_lng, geo_radius_m } = req.body;
+  const { 
+    subject_name, 
+    subject_code, 
+    hour_number, 
+    geo_fence_enabled, 
+    geo_lat, 
+    geo_lng, 
+    geo_radius_m,
+    geo_corners,
+    pin_required
+  } = req.body;
 
   if (!subject_name) {
     return res.status(400).json({ error: 'Subject name is required' });
@@ -46,14 +57,19 @@ router.post('/sessions/start', (req, res) => {
 
   const hour = parseInt(hour_number, 10) || 1;
   const isGeoEnabled = geo_fence_enabled ? 1 : 0;
+  const isPinRequired = pin_required !== undefined ? (pin_required ? 1 : 0) : 1;
   const lat = geo_lat ? parseFloat(geo_lat) : null;
   const lng = geo_lng ? parseFloat(geo_lng) : null;
   const radius = geo_radius_m ? parseInt(geo_radius_m, 10) : 100;
+  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
 
   try {
     const insertStmt = db.prepare(`
-      INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, geo_fence_enabled, geo_lat, geo_lng, geo_radius_m)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (
+        subject_name, subject_code, hour_number, started_by, 
+        geo_fence_enabled, geo_lat, geo_lng, geo_radius_m, geo_corners, pin_required
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insertStmt.run(
@@ -64,7 +80,9 @@ router.post('/sessions/start', (req, res) => {
       isGeoEnabled,
       lat,
       lng,
-      radius
+      radius,
+      cornersJson,
+      isPinRequired
     );
 
     const sessionId = result.lastInsertRowid;
@@ -123,32 +141,78 @@ router.get('/sessions/active', (req, res) => {
   return res.json({ sessions });
 });
 
-// 6. Update Geo-fence for a Session (Toggle on/off, change coords/radius)
+// 6. Update Geo-fence for a Session (Toggle on/off, change 4-corner polygon, coords/radius)
 router.patch('/sessions/:id/geofence', (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
-  const { enabled, lat, lng, radius } = req.body;
+  const { enabled, lat, lng, radius, corners } = req.body;
 
   const session = db.prepare('SELECT id FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
 
+  const cornersJson = corners !== undefined 
+    ? (typeof corners === 'string' ? corners : JSON.stringify(corners)) 
+    : session.geo_corners;
+
   const updateStmt = db.prepare(`
     UPDATE sessions 
-    SET geo_fence_enabled = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?
+    SET geo_fence_enabled = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?
     WHERE id = ?
   `);
 
   updateStmt.run(
     enabled ? 1 : 0,
-    lat !== undefined ? parseFloat(lat) : null,
-    lng !== undefined ? parseFloat(lng) : null,
-    radius !== undefined ? parseInt(radius, 10) : 100,
+    lat !== undefined ? (lat ? parseFloat(lat) : null) : session.geo_lat,
+    lng !== undefined ? (lng ? parseFloat(lng) : null) : session.geo_lng,
+    radius !== undefined ? parseInt(radius, 10) : (session.geo_radius_m || 100),
+    cornersJson,
     sessionId
   );
 
   const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   return res.json({ success: true, session: updated });
+});
+
+// 6b. On-the-fly Toggle 1: Enable / Disable Geofence toggle
+router.patch('/sessions/:id/toggle-geofence', (req, res) => {
+  const sessionId = parseInt(req.params.id, 10);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const newStatus = session.geo_fence_enabled === 1 ? 0 : 1;
+  db.prepare('UPDATE sessions SET geo_fence_enabled = ? WHERE id = ?').run(newStatus, sessionId);
+  const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+
+  return res.json({ 
+    success: true, 
+    geo_fence_enabled: newStatus === 1,
+    message: newStatus === 1 ? 'Geofence enabled' : 'Geofence disabled (bypassed)',
+    session: updated 
+  });
+});
+
+// 6c. On-the-fly Toggle 2: Enable / Disable Unique PIN toggle
+router.patch('/sessions/:id/toggle-pin', (req, res) => {
+  const sessionId = parseInt(req.params.id, 10);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const currentPinReq = session.pin_required !== 0 ? 1 : 0;
+  const newStatus = currentPinReq === 1 ? 0 : 1;
+  db.prepare('UPDATE sessions SET pin_required = ? WHERE id = ?').run(newStatus, sessionId);
+  const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+
+  return res.json({ 
+    success: true, 
+    pin_required: newStatus === 1,
+    message: newStatus === 1 ? 'Unique PIN requirement enabled' : 'Unique PIN requirement disabled (QR scan only)',
+    session: updated 
+  });
 });
 
 // 7. Manual Attendance Override / Error Correction

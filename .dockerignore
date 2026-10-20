@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+.git
+.gitignore
+.env
+**/attendance.db*
+frontend/dist
+.DS_Store
+*.log

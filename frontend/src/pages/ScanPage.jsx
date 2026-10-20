@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { 
-  QrCode, 
-  KeyRound, 
-  UserCheck2, 
+  Camera, 
   CheckCircle, 
   AlertTriangle, 
-  RotateCcw, 
   MapPin, 
-  Camera 
+  Info, 
+  RotateCcw, 
+  ArrowRight,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 import QRScannerModal from '../components/QRScannerModal';
 
@@ -21,6 +22,7 @@ export default function ScanPage() {
   const [studentId, setStudentId] = useState('');
   const [uniquePin, setUniquePin] = useState('');
 
+  const [tokenInfo, setTokenInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null); // 'success' | 'already_marked' | 'error'
   const [resultData, setResultData] = useState(null);
@@ -28,7 +30,7 @@ export default function ScanPage() {
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [coords, setCoords] = useState(null);
-  const [locationStatus, setLocationStatus] = useState('idle');
+  const [locationStatus, setLocationStatus] = useState('idle'); // 'idle' | 'acquired' | 'denied'
 
   // Sync token from URL query params
   useEffect(() => {
@@ -37,7 +39,24 @@ export default function ScanPage() {
     }
   }, [tokenFromUrl]);
 
-  // Automatically request geolocation in background if available
+  // When token is set, fetch token requirements (whether PIN is required, geofence, etc.)
+  useEffect(() => {
+    if (!token) {
+      setTokenInfo(null);
+      return;
+    }
+
+    axios
+      .get(`/api/attendance/token-info?token=${encodeURIComponent(token.trim())}`)
+      .then((res) => {
+        setTokenInfo(res.data);
+      })
+      .catch(() => {
+        setTokenInfo(null);
+      });
+  }, [token]);
+
+  // Request browser geolocation in background
   useEffect(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -46,33 +65,46 @@ export default function ScanPage() {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude
           });
-          setLocationStatus('available');
+          setLocationStatus('acquired');
         },
         () => {
           setLocationStatus('denied');
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
       );
     }
   }, []);
 
   const handleScanSuccess = (scannedToken) => {
-    setToken(scannedToken);
-    setSearchParams({ token: scannedToken });
+    let cleanToken = scannedToken;
+    try {
+      if (scannedToken.includes('token=')) {
+        const parsedUrl = new URL(scannedToken);
+        cleanToken = parsedUrl.searchParams.get('token') || scannedToken;
+      }
+    } catch {
+      // scannedToken is raw string
+    }
+    setToken(cleanToken);
+    setSearchParams({ token: cleanToken });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (!token) {
-      setErrorMsg('No QR token detected. Please scan the dynamic QR code displayed on screen first.');
+      setErrorMsg('No QR token detected. Please scan the current QR code on the auditorium screen.');
       return;
     }
+
     if (!studentId.trim()) {
       setErrorMsg('Please enter your Student ID.');
       return;
     }
-    if (!uniquePin.trim()) {
-      setErrorMsg('Please enter the 6-digit Unique PIN shown on the screen.');
+
+    const isPinRequired = tokenInfo ? tokenInfo.pin_required : true;
+    if (isPinRequired && !uniquePin.trim()) {
+      setErrorMsg('Please enter the 6-digit PIN displayed on the auditorium screen.');
       return;
     }
 
@@ -97,7 +129,7 @@ export default function ScanPage() {
         setResultData(err.response.data);
       } else {
         setStatus('error');
-        setErrorMsg(err.response?.data?.error || 'Failed to mark attendance. Please try again.');
+        setErrorMsg(err.response?.data?.error || 'Failed to mark attendance. Please verify your details.');
       }
     } finally {
       setLoading(false);
@@ -114,46 +146,56 @@ export default function ScanPage() {
   // SUCCESS STATE
   if (status === 'success' && resultData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-emerald-500/30 bg-slate-900/95 p-8 text-center shadow-2xl backdrop-blur-xl">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400">
-            <CheckCircle className="h-9 w-9" />
+      <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
+        <div className="w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-8 sm:p-10 text-center shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
+            <CheckCircle className="h-8 w-8" />
           </div>
-          <h2 className="mt-4 text-2xl font-black text-white">Attendance Marked!</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Your attendance has been securely verified and logged.
+
+          <p className="mt-4 text-center text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+            MVJ College of Engineering
+          </p>
+          <h1 className="mt-1 font-serif text-3xl font-normal text-[#f5f0ea]">
+            Attendance <span className="italic text-emerald-400">Marked.</span>
+          </h1>
+          <p className="mt-2 text-xs text-[#a39b94]">
+            Your presence has been securely verified and recorded.
           </p>
 
-          <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 text-left space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Student:</span>
-              <span className="font-bold text-white">{resultData.student?.name}</span>
+          <div className="mt-6 divide-y divide-[rgba(255,235,215,0.06)] rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4 text-xs text-left">
+            <div className="flex justify-between py-2 text-[#a39b94]">
+              <span>Student Name</span>
+              <span className="font-semibold text-[#f5f0ea]">{resultData.student?.name}</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Student ID:</span>
-              <span className="font-mono font-bold text-emerald-400">{resultData.student?.student_id}</span>
+            <div className="flex justify-between py-2 text-[#a39b94]">
+              <span>Student ID</span>
+              <span className="font-mono font-bold text-amber-400">{resultData.student?.student_id}</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Subject:</span>
-              <span className="font-bold text-white">{resultData.session?.subject_name}</span>
+            <div className="flex justify-between py-2 text-[#a39b94]">
+              <span>USN</span>
+              <span className="font-mono font-medium text-[#f5f0ea]">{resultData.student?.usn}</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Class Hour:</span>
-              <span className="font-bold text-brand-300">Hour {resultData.session?.hour_number}</span>
+            <div className="flex justify-between py-2 text-[#a39b94]">
+              <span>Session / Hour</span>
+              <span className="font-medium text-[#f5f0ea]">
+                {resultData.session?.subject_name} (Hour {resultData.session?.hour_number})
+              </span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Logged At:</span>
-              <span className="text-slate-300">{new Date(resultData.marked_at).toLocaleTimeString()}</span>
+            <div className="flex justify-between py-2 text-[#a39b94]">
+              <span>Recorded Time</span>
+              <span className="font-mono text-[#f5f0ea]">
+                {new Date(resultData.marked_at).toLocaleTimeString()}
+              </span>
             </div>
           </div>
 
-          <button
-            onClick={resetForm}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-800 py-3.5 text-sm font-bold text-slate-200 transition hover:bg-slate-700"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Mark for Another Student
-          </button>
+          {/* Confirmation Notice */}
+          <div className="mt-6 rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-center text-xs text-[#706860]">
+            <p className="font-medium text-[#a39b94]">Session Attendance Locked</p>
+            <p className="mt-1 text-[11px] leading-relaxed">
+              Your attendance for this session has been locked. Each attendee must mark attendance exclusively on their own mobile device.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -162,100 +204,127 @@ export default function ScanPage() {
   // ALREADY MARKED STATE
   if (status === 'already_marked') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-amber-500/30 bg-slate-900/95 p-8 text-center shadow-2xl backdrop-blur-xl">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400">
-            <AlertTriangle className="h-9 w-9" />
+      <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
+        <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-[#120f0d] p-8 text-center shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
+            <AlertTriangle className="h-7 w-7" />
           </div>
-          <h2 className="mt-4 text-xl font-bold text-white">Already Marked</h2>
-          <p className="mt-2 text-sm text-slate-300">
-            {resultData?.error || 'Attendance was already submitted for this student in this session.'}
+          <h2 className="mt-4 font-serif text-2xl font-normal text-[#f5f0ea]">
+            Already Recorded
+          </h2>
+          <p className="mt-2 text-xs text-[#a39b94] leading-relaxed">
+            {resultData?.error || 'Attendance for this Student ID has already been recorded for this session.'}
           </p>
-          <div className="mt-6 rounded-2xl bg-amber-500/10 p-4 text-xs text-amber-200/80 border border-amber-500/20">
-            Double-marking is strictly prevented by database constraints to prevent proxy attendance.
+          <div className="mt-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] text-amber-200/90 leading-relaxed">
+            Duplicate entries are strictly prevented by the database.
           </div>
           <button
+            type="button"
             onClick={resetForm}
-            className="mt-6 w-full rounded-2xl bg-slate-800 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+            className="mt-6 w-full rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#f5f0ea] hover:bg-[#201c18]"
           >
-            Go Back
+            Back to Submission
           </button>
         </div>
       </div>
     );
   }
 
-  // MAIN ATTENDANCE FORM (StudentID + UniquePIN)
+  // MAIN ATTENDANCE FORM
+  const isPinRequired = tokenInfo ? tokenInfo.pin_required : true;
+
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-10 px-4 sm:px-6">
+    <div className="min-h-screen bg-[#080605] flex flex-col justify-center py-12 px-4 sm:px-6">
       <div className="mx-auto w-full max-w-md">
         {/* Header */}
-        <div className="text-center mb-6">
-          <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600/20 text-brand-400 ring-1 ring-brand-500/30">
-            <UserCheck2 className="h-6 w-6" />
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 mb-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#a39b94]">
+              MVJ College of Engineering
+            </span>
+            <span className="text-[11px] text-amber-500">•</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+              Spotlight
+            </span>
           </div>
-          <h1 className="mt-3 text-2xl font-black tracking-tight text-white">
-            Mark Classroom Attendance
+
+          <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-[#f5f0ea]">
+            Mark <span className="italic text-amber-400">Attendance.</span>
           </h1>
-          <p className="mt-1 text-xs text-slate-400">
-            Enter your Student ID and the current 6-digit PIN displayed on the screen.
+          <p className="mt-2 text-xs text-[#a39b94]">
+            {isPinRequired 
+              ? 'Enter your Student ID and the current PIN from the screen.' 
+              : 'Enter your Student ID to record your attendance.'}
           </p>
         </div>
 
-        {/* Token Status Badge */}
-        <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3">
+        {/* User Required Hint Banner: First 4 letters of name (CAPITAL) + last 4 digits of mobile */}
+        <div className="mb-6 rounded-2xl border border-[rgba(240,150,80,0.25)] bg-gradient-to-r from-[#18130e] to-[#120f0d] p-4 text-xs shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold uppercase tracking-wider text-amber-400 text-[11px]">
+                Student ID Hint:
+              </span>
+              <p className="mt-1 text-xs text-[#f5f0ea] font-medium leading-relaxed">
+                First 4 letters of your Name (CAPITAL) + Last 4 digits of your Mobile Number.
+              </p>
+              <p className="text-[11px] text-[#706860] mt-0.5">
+                Example: <span className="font-mono text-[#a39b94]">ARJUN</span> + <span className="font-mono text-[#a39b94]">9876543210</span> → <span className="font-mono font-bold text-amber-400">ARJU3210</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* QR Token Status Card */}
+        <div className="mb-5 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <div className={`h-2.5 w-2.5 rounded-full ${token ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            <span className="text-xs font-medium text-slate-300">
-              {token ? 'QR Token Linked' : 'No QR Token Detected'}
+            <span className={`h-2.5 w-2.5 rounded-full ${token ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <span className="text-xs text-[#f5f0ea] font-medium">
+              {token ? 'Auditorium QR Linked' : 'No QR Token Detected'}
             </span>
           </div>
           <button
             type="button"
             onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-brand-600/30 px-3 py-1.5 text-xs font-semibold text-brand-300 border border-brand-500/30 hover:bg-brand-600/40"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-semibold text-amber-400 transition hover:border-amber-500/50 hover:bg-[#201c18]"
           >
             <Camera className="h-3.5 w-3.5" />
-            {token ? 'Rescan' : 'Open Camera'}
+            <span>{token ? 'Rescan Screen' : 'Open Camera'}</span>
           </button>
         </div>
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-xs font-medium text-red-300">
+          <div className="mb-5 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-xs font-medium text-red-300">
             {errorMsg}
           </div>
         )}
 
         {/* Form Card */}
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Field 1: Student ID */}
+        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 1. Student ID */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
-                1. Student ID <span className="text-brand-400">*</span>
+              <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
+                1. Student ID <span className="text-amber-500">*</span>
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. ABCD1234"
-                  value={studentId}
-                  onChange={(e) => setStudentId(e.target.value.toUpperCase())}
-                  className="w-full rounded-2xl border border-slate-700 bg-slate-800/80 px-4 py-3.5 text-base font-mono uppercase tracking-wider text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                />
-              </div>
-              <span className="mt-1.5 block text-[11px] text-slate-500">
-                First 4 letters of your Name in CAPS + last 4 digits of your Mobile.
-              </span>
+              <input
+                type="text"
+                required
+                placeholder="e.g. ARJU3210"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value.toUpperCase())}
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 font-mono text-base uppercase tracking-[0.12em] text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
             </div>
 
-            {/* Field 2: Unique PIN */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
-                2. Unique PIN <span className="text-brand-400">*</span>
-              </label>
-              <div className="relative">
+            {/* 2. Screen PIN (Only when active) */}
+            {isPinRequired && (
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
+                  2. Screen PIN <span className="text-amber-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -263,32 +332,28 @@ export default function ScanPage() {
                   placeholder="6-digit PIN from screen"
                   value={uniquePin}
                   onChange={(e) => setUniquePin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full rounded-2xl border border-slate-700 bg-slate-800/80 px-4 py-3.5 text-center text-2xl font-mono font-bold tracking-widest text-brand-300 placeholder-slate-600 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3.5 text-center font-mono text-2xl font-bold tracking-[0.25em] text-amber-400 placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
-              <span className="mt-1.5 block text-[11px] text-slate-500">
-                Rotates every 18-20 seconds on the classroom display.
-              </span>
-            </div>
+            )}
 
-            {/* Geolocation indicator */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" />
-                GPS Geofence:
-              </span>
-              <span className={coords ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
-                {coords ? 'Location Acquired' : 'GPS Optional / Standby'}
-              </span>
-            </div>
-
-            {/* Submit Button */}
+            {/* Spotlight Amber Submit CTA */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-2xl bg-brand-600 py-4 text-base font-bold text-white shadow-xl shadow-brand-500/20 transition hover:bg-brand-500 active:scale-[0.99] disabled:opacity-50"
+              className="w-full min-h-[48px] rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-3.5 text-xs font-semibold uppercase tracking-[0.16em] text-[#080605] shadow-amber-glow transition hover:opacity-95 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Verifying & Marking...' : 'Submit Attendance'}
+              {loading ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/40 border-t-black"></div>
+                  <span>Verifying Attendance...</span>
+                </>
+              ) : (
+                <>
+                  <span>Submit Attendance</span>
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
           </form>
         </div>

@@ -1,9 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg: #080605;
+  --surface: #120f0d;
+  --card: #181512;
+  --ink: #f5f0ea;
+  --ink-soft: #a39b94;
+  --ink-muted: #706860;
+  --amber: #f09650;
+  --line: rgba(255, 235, 215, 0.08);
+}
+
 @layer base {
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #080605;
+    color: #f5f0ea;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow-x: hidden;
   }
+}
+
+/* Subtle custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080605;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 235, 215, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(240, 150, 80, 0.4);
 }
