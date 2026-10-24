@@ -7,25 +7,75 @@ import {
   Download,
   Copy,
   Check,
-  Lock,
   Printer,
-  MapPin,
-  Navigation,
+  Lock,
   Save,
+  Navigation,
+  RotateCcw,
+  MapPin,
   CheckCircle2,
   AlertCircle,
-  RotateCcw,
   Plus,
-  Pencil,
   Trash2,
   Eye,
-  Star,
+  Pencil,
   X,
-  BookmarkCheck
+  BookmarkCheck,
+  Star,
+  CornerDownLeft,
+  RefreshCw
 } from 'lucide-react';
-import { copyToClipboard } from '../../utils/clipboard';
 
-const MVJCE_DEFAULT = { lat: 12.985300, lng: 77.762465, name: 'MVJCE Central Auditorium', radius: 100 };
+const MVJCE_DEFAULT = {
+  lat: 12.985300,
+  lng: 77.762465,
+  radius: 100,
+  name: 'MVJCE Central Auditorium'
+};
+
+// Clipboard helper with fallback
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-999999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+  return ok;
+}
+
+// 2D Line Segment Intersection Helper for Polygon Self-Intersection Test
+function doSegmentsIntersect(p1, p2, p3, p4) {
+  const ccw = (a, b, c) => (c.lng - a.lng) * (b.lat - a.lat) > (b.lng - a.lng) * (c.lat - a.lat);
+  return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
+}
+
+function checkPolygonSelfIntersection(pts) {
+  if (!Array.isArray(pts) || pts.length < 4) return false;
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a1 = pts[i];
+    const a2 = pts[(i + 1) % n];
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(i - j) <= 1 || (i === 0 && j === n - 1)) continue;
+      const b1 = pts[j];
+      const b2 = pts[(j + 1) % n];
+      if (doSegmentsIntersect(a1, a2, b1, b2)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /* ─── Saved Location Modal ─────────────────────────────────────────────────── */
 function SavedLocationModal({ location, onSave, onClose }) {
@@ -36,9 +86,14 @@ function SavedLocationModal({ location, onSave, onClose }) {
   const [lat, setLat] = useState(location?.geo_lat ?? MVJCE_DEFAULT.lat);
   const [lng, setLng] = useState(location?.geo_lng ?? MVJCE_DEFAULT.lng);
   const [radius, setRadius] = useState(location?.geo_radius_m ?? 100);
-  const [corners, setCorners] = useState(
-    location?.geo_corners ? (typeof location.geo_corners === 'string'
-      ? JSON.parse(location.geo_corners) : location.geo_corners) : []
+
+  const initialCorners = location?.geo_corners
+    ? (typeof location.geo_corners === 'string' ? JSON.parse(location.geo_corners) : location.geo_corners)
+    : [];
+
+  const [corners, setCorners] = useState(Array.isArray(initialCorners) ? initialCorners : []);
+  const [targetEdges, setTargetEdges] = useState(
+    Array.isArray(initialCorners) && initialCorners.length >= 4 ? initialCorners.length : 4
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -58,12 +113,46 @@ function SavedLocationModal({ location, onSave, onClose }) {
     );
   };
 
+  const handleEdgesChange = (newCount) => {
+    const val = parseInt(newCount, 10);
+    if (isNaN(val) || val < 4 || val > 20) return;
+    if (corners.length > val) {
+      if (window.confirm(`Reducing to ${val} edges will trim existing points from the end. Continue?`)) {
+        setCorners(corners.slice(0, val));
+      } else {
+        return;
+      }
+    }
+    setTargetEdges(val);
+  };
+
+  const handleUndoPoint = () => {
+    if (corners.length > 0) {
+      setCorners(corners.slice(0, -1));
+    }
+  };
+
+  const handleClearPolygon = () => {
+    setCorners([]);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!name.trim()) { setError('Preset name is required'); return; }
-    if (isNaN(lat) || isNaN(lng)) { setError('Valid coordinates required'); return; }
-    if (type === 'polygon' && corners.length < 3) { setError('Polygon requires at least 3 corners'); return; }
+
+    if (type === 'circle') {
+      if (isNaN(lat) || isNaN(lng)) { setError('Valid center coordinates required'); return; }
+    } else {
+      if (corners.length !== targetEdges) {
+        setError(`Please place all ${targetEdges} vertices on the map (currently placed: ${corners.length})`);
+        return;
+      }
+      if (checkPolygonSelfIntersection(corners)) {
+        setError('Polygon has self-intersecting boundary edges. Please reposition vertex markers.');
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -72,9 +161,9 @@ function SavedLocationModal({ location, onSave, onClose }) {
         name: name.trim(),
         description: description.trim(),
         type,
-        geo_lat: lat,
-        geo_lng: lng,
-        geo_radius_m: radius,
+        geo_lat: type === 'circle' ? lat : (corners[0]?.lat || lat),
+        geo_lng: type === 'circle' ? lng : (corners[0]?.lng || lng),
+        geo_radius_m: type === 'circle' ? radius : 100,
         geo_corners: type === 'polygon' ? corners : null
       });
       onClose();
@@ -102,7 +191,6 @@ function SavedLocationModal({ location, onSave, onClose }) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Preset Name *</label>
             <input
@@ -112,7 +200,6 @@ function SavedLocationModal({ location, onSave, onClose }) {
             />
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Description (optional)</label>
             <input
@@ -122,7 +209,7 @@ function SavedLocationModal({ location, onSave, onClose }) {
             />
           </div>
 
-          {/* Geofence Type */}
+          {/* Geofence Type Selector */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-2">Geofence Type</label>
             <div className="flex gap-2">
@@ -138,46 +225,101 @@ function SavedLocationModal({ location, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Map */}
+          {/* Polygon edge count selector */}
+          {type === 'polygon' && (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                  Number of polygon edges / vertices (4 – 20)
+                </label>
+                <select
+                  value={targetEdges}
+                  onChange={(e) => handleEdgesChange(e.target.value)}
+                  className="rounded-lg border border-amber-500/30 bg-[#181512] px-3 py-1 font-mono text-xs text-amber-400 font-bold focus:outline-none"
+                >
+                  {Array.from({ length: 17 }, (_, i) => i + 4).map((n) => (
+                    <option key={n} value={n}>
+                      {n} Edges ({n} Vertices)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between text-xs text-[#a39b94]">
+                <span>
+                  Placed: <strong className="text-amber-400 font-mono">{corners.length}</strong> / {targetEdges}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleUndoPoint}
+                    disabled={corners.length === 0}
+                    className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-[#a39b94] hover:text-amber-400 disabled:opacity-40"
+                  >
+                    <CornerDownLeft className="h-3 w-3" /> Undo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearPolygon}
+                    disabled={corners.length === 0}
+                    className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-red-400 hover:text-red-300 disabled:opacity-40"
+                  >
+                    <RefreshCw className="h-3 w-3" /> Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Map */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Location on Map</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+              {type === 'circle' ? 'Location on Map' : 'Click Map to Place Vertices'}
+            </label>
             <VenueMapPicker
-              lat={lat} lng={lng} radius={radius}
+              lat={lat}
+              lng={lng}
+              radius={radius}
+              mode={type}
+              targetEdges={targetEdges}
+              corners={corners}
               onLocationChange={({ lat: newLat, lng: newLng }) => { setLat(newLat); setLng(newLng); }}
               onRadiusChange={(r) => setRadius(r)}
-              height="240px"
+              onCornersChange={(pts) => setCorners(pts)}
+              height="260px"
             />
           </div>
 
-          {/* Coordinates */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Latitude</label>
-              <input type="number" step="0.000001" value={lat} onChange={(e) => setLat(parseFloat(e.target.value) || 0)}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Longitude</label>
-              <input type="number" step="0.000001" value={lng} onChange={(e) => setLng(parseFloat(e.target.value) || 0)}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Radius (m)</label>
-              <input type="number" min={20} max={500} value={radius} onChange={(e) => setRadius(parseInt(e.target.value, 10) || 100)}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* GPS Button */}
-          <button type="button" onClick={handleGPS} disabled={gpsLoading}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-amber-400 hover:border-amber-500 disabled:opacity-50"
-          >
-            <Navigation className="h-3.5 w-3.5" />
-            <span>{gpsLoading ? 'Acquiring GPS…' : 'Use My Current Location'}</span>
-          </button>
+          {/* Circle Mode Coordinates and Radius Controls */}
+          {type === 'circle' && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Latitude</label>
+                  <input type="number" step="0.000001" value={lat} onChange={(e) => setLat(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Longitude</label>
+                  <input type="number" step="0.000001" value={lng} onChange={(e) => setLng(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Radius (m)</label>
+                  <input type="number" min={20} max={500} value={radius} onChange={(e) => setRadius(parseInt(e.target.value, 10) || 100)}
+                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <button type="button" onClick={handleGPS} disabled={gpsLoading}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-amber-400 hover:border-amber-500 disabled:opacity-50"
+              >
+                <Navigation className="h-3.5 w-3.5" />
+                <span>{gpsLoading ? 'Acquiring GPS…' : 'Use My Current Location'}</span>
+              </button>
+            </>
+          )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
@@ -202,12 +344,14 @@ export default function AdminSettings() {
   const [regData, setRegData] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  // Venue config state
+  // Active venue config state
   const [venueName, setVenueName] = useState(MVJCE_DEFAULT.name);
   const [geoLat, setGeoLat] = useState(MVJCE_DEFAULT.lat);
   const [geoLng, setGeoLng] = useState(MVJCE_DEFAULT.lng);
   const [geoRadius, setGeoRadius] = useState(MVJCE_DEFAULT.radius);
   const [geoType, setGeoType] = useState('circle');
+  const [polygonEdges, setPolygonEdges] = useState(4);
+  const [polygonPoints, setPolygonPoints] = useState([]);
   const [mapplsKey, setMapplsKey] = useState('');
   const [venueLoading, setVenueLoading] = useState(true);
   const [venueSaving, setVenueSaving] = useState(false);
@@ -218,7 +362,7 @@ export default function AdminSettings() {
   // Saved Locations state
   const [savedLocations, setSavedLocations] = useState([]);
   const [locsLoading, setLocsLoading] = useState(true);
-  const [editingLocation, setEditingLocation] = useState(null);  // null=closed, {}=new, {id,...}=edit
+  const [editingLocation, setEditingLocation] = useState(null);
   const [previewLocation, setPreviewLocation] = useState(null);
 
   // Password state
@@ -244,6 +388,16 @@ export default function AdminSettings() {
           setGeoRadius(c.geo_radius_m || MVJCE_DEFAULT.radius);
           setGeoType(c.geo_type || 'circle');
           setMapplsKey(c.mappls_api_key || '');
+
+          if (c.geo_corners) {
+            try {
+              const parsed = typeof c.geo_corners === 'string' ? JSON.parse(c.geo_corners) : c.geo_corners;
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setPolygonPoints(parsed);
+                if (parsed.length >= 4) setPolygonEdges(parsed.length);
+              }
+            } catch {}
+          }
         }
       })
       .catch(() => {})
@@ -267,22 +421,71 @@ export default function AdminSettings() {
     loadSavedLocations();
   }, []);
 
+  // ── Mode Switcher ──────────────────────────────────────────────────────
+  const handleSwitchMode = (newMode) => {
+    setGeoType(newMode);
+    setIsDirty(true);
+    setVenueMsg('');
+    setVenueError('');
+  };
+
+  const handlePolygonEdgesChange = (val) => {
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 4 || num > 20) return;
+    if (polygonPoints.length > num) {
+      if (window.confirm(`Reducing edges to ${num} will remove the last ${polygonPoints.length - num} points. Proceed?`)) {
+        setPolygonPoints(polygonPoints.slice(0, num));
+      } else {
+        return;
+      }
+    }
+    setPolygonEdges(num);
+    setIsDirty(true);
+  };
+
+  const handleUndoPolygonPoint = () => {
+    if (polygonPoints.length > 0) {
+      setPolygonPoints((prev) => prev.slice(0, -1));
+      setIsDirty(true);
+    }
+  };
+
+  const handleClearPolygonPoints = () => {
+    setPolygonPoints([]);
+    setIsDirty(true);
+  };
+
   // ── Venue config handlers ──────────────────────────────────────────────
   const handleSaveVenue = async (e) => {
     e.preventDefault();
     setVenueSaving(true);
     setVenueMsg('');
     setVenueError('');
+
+    if (geoType === 'polygon') {
+      if (polygonPoints.length !== polygonEdges) {
+        setVenueError(`Please place all ${polygonEdges} vertices on the map before saving (currently placed: ${polygonPoints.length})`);
+        setVenueSaving(false);
+        return;
+      }
+      if (checkPolygonSelfIntersection(polygonPoints)) {
+        setVenueError('The polygon boundary is self-intersecting. Please drag the markers to form a clean perimeter.');
+        setVenueSaving(false);
+        return;
+      }
+    }
+
     try {
       const res = await axios.post('/api/admin/venue-config', {
         venue_name: venueName,
-        geo_lat: geoLat,
-        geo_lng: geoLng,
-        geo_radius_m: geoRadius,
+        geo_lat: geoType === 'circle' ? geoLat : (polygonPoints[0]?.lat || geoLat),
+        geo_lng: geoType === 'circle' ? geoLng : (polygonPoints[0]?.lng || geoLng),
+        geo_radius_m: geoType === 'circle' ? geoRadius : 100,
         geo_type: geoType,
+        geo_corners: geoType === 'polygon' ? polygonPoints : null,
         mappls_api_key: mapplsKey
       }, axiosConfig);
-      setVenueMsg(res.data.message || 'Venue configuration saved');
+      setVenueMsg(res.data.message || 'Venue configuration saved successfully');
       setIsDirty(false);
     } catch (err) {
       setVenueError(err.response?.data?.error || 'Failed to save venue configuration');
@@ -299,7 +502,7 @@ export default function AdminSettings() {
       (pos) => {
         setGeoLat(parseFloat(pos.coords.latitude.toFixed(6)));
         setGeoLng(parseFloat(pos.coords.longitude.toFixed(6)));
-        setVenueMsg('Updated to current GPS coordinates');
+        setVenueMsg('Updated center to current GPS coordinates');
         setIsDirty(true);
       },
       (err) => setVenueError('Could not acquire location: ' + err.message),
@@ -313,18 +516,36 @@ export default function AdminSettings() {
     setGeoRadius(MVJCE_DEFAULT.radius);
     setVenueName(MVJCE_DEFAULT.name);
     setGeoType('circle');
-    setVenueMsg('Reset to MVJCE campus defaults (unsaved)');
+    setPolygonPoints([]);
+    setPolygonEdges(4);
+    setVenueMsg('Reset to MVJCE campus circle defaults (unsaved)');
     setIsDirty(true);
   };
 
-  // ── Apply preset to active venue config ───────────────────────────────
+  // ── Apply preset to active venue config with confirmation ─────────────
   const applyPresetToVenue = (loc) => {
+    const typeLabel = loc.type === 'polygon' ? 'Polygon' : 'Circle';
+    if (!window.confirm(`Apply preset "${loc.name}" (${typeLabel}) as the active venue geofence?`)) {
+      return;
+    }
+
     setVenueName(loc.name);
-    setGeoLat(loc.geo_lat);
-    setGeoLng(loc.geo_lng);
-    setGeoRadius(loc.geo_radius_m || 100);
     setGeoType(loc.type || 'circle');
-    setVenueMsg(`Loaded preset "${loc.name}" — click Save to apply.`);
+
+    if (loc.type === 'polygon') {
+      let parsedCorners = [];
+      try {
+        parsedCorners = typeof loc.geo_corners === 'string' ? JSON.parse(loc.geo_corners) : (loc.geo_corners || []);
+      } catch {}
+      setPolygonPoints(parsedCorners);
+      setPolygonEdges(parsedCorners.length >= 4 ? parsedCorners.length : 4);
+    } else {
+      setGeoLat(loc.geo_lat || MVJCE_DEFAULT.lat);
+      setGeoLng(loc.geo_lng || MVJCE_DEFAULT.lng);
+      setGeoRadius(loc.geo_radius_m || 100);
+    }
+
+    setVenueMsg(`Loaded preset "${loc.name}" into active venue — click "Save Venue Configuration" to persist.`);
     setIsDirty(true);
     setPreviewLocation(null);
   };
@@ -343,6 +564,7 @@ export default function AdminSettings() {
     if (!window.confirm(`Delete preset "${name}"?`)) return;
     try {
       await axios.delete(`/api/admin/saved-locations/${id}`, axiosConfig);
+      if (previewLocation?.id === id) setPreviewLocation(null);
       loadSavedLocations();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to delete preset');
@@ -410,12 +632,14 @@ export default function AdminSettings() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={handleUseCurrentLocation}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-amber-400 hover:border-amber-500 transition"
-              >
-                <Navigation className="h-3.5 w-3.5" />
-                <span>Use GPS</span>
-              </button>
+              {geoType === 'circle' && (
+                <button type="button" onClick={handleUseCurrentLocation}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-amber-400 hover:border-amber-500 transition"
+                >
+                  <Navigation className="h-3.5 w-3.5" />
+                  <span>Use GPS</span>
+                </button>
+              )}
               <button type="button" onClick={handleResetDefaults}
                 className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-[#a39b94] hover:text-[#f5f0ea] transition"
               >
@@ -437,20 +661,63 @@ export default function AdminSettings() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Map */}
-            <div className="lg:col-span-7 space-y-2">
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94]">
-                Interactive Map
-              </label>
+            {/* Interactive Map */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                  {geoType === 'circle' ? 'Interactive Circular Geofence' : `Interactive Polygon Boundary (${polygonPoints.length} of ${polygonEdges} points placed)`}
+                </label>
+                {geoType === 'polygon' && polygonPoints.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUndoPolygonPoint}
+                      className="inline-flex items-center gap-1 text-[11px] text-[#a39b94] hover:text-amber-400"
+                    >
+                      <CornerDownLeft className="h-3 w-3" /> Undo Point
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearPolygonPoints}
+                      className="inline-flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300"
+                    >
+                      <RefreshCw className="h-3 w-3" /> Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <VenueMapPicker
-                lat={geoLat} lng={geoLng} radius={geoRadius}
+                lat={geoLat}
+                lng={geoLng}
+                radius={geoRadius}
+                mode={geoType}
+                targetEdges={polygonEdges}
+                corners={polygonPoints}
                 onLocationChange={({ lat, lng }) => { setGeoLat(lat); setGeoLng(lng); setIsDirty(true); }}
                 onRadiusChange={(r) => { setGeoRadius(r); setIsDirty(true); }}
-                height="360px"
+                onCornersChange={(pts) => { setPolygonPoints(pts); setIsDirty(true); }}
+                height="380px"
               />
-              <p className="text-[11px] text-[#706860]">
-                Drag the marker to reposition. Sessions inherit this venue unless overridden.
-              </p>
+
+              {geoType === 'circle' ? (
+                <p className="text-[11px] text-[#706860]">
+                  Click map or drag the center pin to set venue center. Use the radius slider on the right to set boundary distance.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-amber-400/90 font-medium">
+                    {polygonPoints.length < polygonEdges
+                      ? `Click on the map to place vertex ${polygonPoints.length + 1} of ${polygonEdges}. Numbered markers will connect in sequence.`
+                      : `✓ All ${polygonEdges} vertices placed! Drag any numbered marker on the map to adjust edges.`}
+                  </p>
+                  {polygonPoints.length >= 4 && checkPolygonSelfIntersection(polygonPoints) && (
+                    <p className="text-[11px] text-red-400 font-semibold flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Warning: Boundary edges self-intersect. Reposition markers to make a clean polygon.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Form */}
@@ -467,11 +734,16 @@ export default function AdminSettings() {
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-2">Geofence Type</label>
                 <div className="flex gap-2">
-                  {[{ key: 'circle', label: '⬤ Circle' }, { key: 'polygon', label: '⬡ Polygon' }].map(({ key, label }) => (
+                  {[
+                    { key: 'circle', label: '⬤ Circle' },
+                    { key: 'polygon', label: '⬡ Polygon' }
+                  ].map(({ key, label }) => (
                     <button key={key} type="button"
-                      onClick={() => { setGeoType(key); setIsDirty(true); }}
-                      className={`flex-1 rounded-xl py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                        geoType === key ? 'bg-amber-500 text-[#080605]' : 'border border-[rgba(255,235,215,0.12)] bg-[#181512] text-[#a39b94] hover:text-[#f5f0ea]'
+                      onClick={() => handleSwitchMode(key)}
+                      className={`flex-1 rounded-xl py-2.5 text-xs font-semibold uppercase tracking-wider transition ${
+                        geoType === key
+                          ? 'bg-amber-500 text-[#080605] shadow-md font-bold'
+                          : 'border border-[rgba(255,235,215,0.12)] bg-[#181512] text-[#a39b94] hover:text-[#f5f0ea]'
                       }`}
                     >
                       {label}
@@ -480,41 +752,96 @@ export default function AdminSettings() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Latitude</label>
-                  <input type="number" step="0.000001" required value={geoLat}
-                    onChange={(e) => { setGeoLat(parseFloat(e.target.value) || 0); setIsDirty(true); }}
-                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Longitude</label>
-                  <input type="number" step="0.000001" required value={geoLng}
-                    onChange={(e) => { setGeoLng(parseFloat(e.target.value) || 0); setIsDirty(true); }}
-                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
+              {/* ── Circle Mode Specific Controls ── */}
               {geoType === 'circle' && (
-                <div>
-                  <div className="flex justify-between text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
-                    <span>Radius</span>
-                    <span className="font-mono text-amber-400">{geoRadius} m</span>
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Center Latitude</label>
+                      <input type="number" step="0.000001" required value={geoLat}
+                        onChange={(e) => { setGeoLat(parseFloat(e.target.value) || 0); setIsDirty(true); }}
+                        className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Center Longitude</label>
+                      <input type="number" step="0.000001" required value={geoLng}
+                        onChange={(e) => { setGeoLng(parseFloat(e.target.value) || 0); setIsDirty(true); }}
+                        className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 font-mono text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
-                  <input type="range" min="20" max="500" step="5" value={geoRadius}
-                    onChange={(e) => { setGeoRadius(parseInt(e.target.value, 10)); setIsDirty(true); }}
-                    className="w-full accent-amber-500 h-1.5 rounded-lg bg-[#181512] cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-[#706860] mt-1 font-mono">
-                    <span>20m</span><span>150m</span><span>500m</span>
+
+                  <div>
+                    <div className="flex justify-between text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                      <span>Radius Distance</span>
+                      <span className="font-mono text-amber-400 font-bold">{geoRadius} m</span>
+                    </div>
+                    <input type="range" min="20" max="500" step="5" value={geoRadius}
+                      onChange={(e) => { setGeoRadius(parseInt(e.target.value, 10)); setIsDirty(true); }}
+                      className="w-full accent-amber-500 h-1.5 rounded-lg bg-[#181512] cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-[#706860] mt-1 font-mono">
+                      <span>20m</span><span>150m</span><span>500m</span>
+                    </div>
                   </div>
                 </div>
               )}
 
+              {/* ── Polygon Mode Specific Controls ── */}
+              {geoType === 'polygon' && (
+                <div className="space-y-4 pt-1">
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                        Number of polygon edges / vertices
+                      </label>
+                      <select
+                        value={polygonEdges}
+                        onChange={(e) => handlePolygonEdgesChange(e.target.value)}
+                        className="rounded-lg border border-amber-500/40 bg-[#181512] px-3 py-1 font-mono text-xs text-amber-400 font-bold focus:outline-none"
+                      >
+                        {Array.from({ length: 17 }, (_, i) => i + 4).map((n) => (
+                          <option key={n} value={n}>
+                            {n} Edges ({n} Vertices)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-[#a39b94] leading-relaxed">
+                      Select how many vertices define your auditorium or classroom boundary.
+                      Currently placed: <strong className="text-amber-400 font-mono">{polygonPoints.length}</strong> / {polygonEdges}.
+                    </p>
+                  </div>
+
+                  {/* Vertices List / Table */}
+                  {polygonPoints.length > 0 && (
+                    <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3 space-y-2 max-h-48 overflow-y-auto">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                        Boundary Coordinates ({polygonPoints.length} placed)
+                      </div>
+                      <div className="space-y-1">
+                        {polygonPoints.map((pt, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs font-mono py-1 border-b border-[rgba(255,235,215,0.04)]">
+                            <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                              <span className="h-4 w-4 rounded-full bg-amber-500/20 flex items-center justify-center text-[10px]">
+                                {idx + 1}
+                              </span>
+                              Vertex {idx + 1}
+                            </span>
+                            <span className="text-[#f5f0ea]">
+                              {pt.lat.toFixed(6)}, {pt.lng.toFixed(6)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button type="submit" disabled={venueSaving || venueLoading}
-                className="w-full min-h-[44px] rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full min-h-[44px] rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
               >
                 <Save className="h-4 w-4" />
                 <span>{venueSaving ? 'Saving…' : 'Save Venue Configuration'}</span>
@@ -533,7 +860,7 @@ export default function AdminSettings() {
               </div>
               <h2 className="font-serif text-2xl font-normal text-[#f5f0ea] mt-1">Quick-Select Venues</h2>
               <p className="text-xs text-[#a39b94] mt-1">
-                Create reusable location presets that you can quickly apply to the active venue.
+                Manage reusable location presets. Click "Preview" to inspect exact boundary or "Apply to Active Venue" to activate.
               </p>
             </div>
             <button
@@ -560,9 +887,9 @@ export default function AdminSettings() {
               {savedLocations.map((loc) => (
                 <div
                   key={loc.id}
-                  className={`rounded-xl border bg-[#181512] p-4 space-y-2 transition ${
+                  className={`rounded-xl border bg-[#181512] p-4 space-y-3 transition ${
                     previewLocation?.id === loc.id
-                      ? 'border-amber-500/50 shadow-amber-glow'
+                      ? 'border-amber-500 shadow-amber-glow'
                       : 'border-[rgba(255,235,215,0.08)] hover:border-[rgba(255,235,215,0.15)]'
                   }`}
                 >
@@ -581,13 +908,30 @@ export default function AdminSettings() {
                         <p className="text-[11px] text-[#706860] truncate">{loc.description}</p>
                       )}
                       <p className="font-mono text-[10px] text-[#554e48] mt-1">
-                        {loc.geo_lat?.toFixed(5)}, {loc.geo_lng?.toFixed(5)}
-                        {loc.type === 'circle' && <span className="ml-1 text-amber-500/60">• {loc.geo_radius_m}m</span>}
+                        {loc.type === 'circle' ? (
+                          <>
+                            {loc.geo_lat?.toFixed(5)}, {loc.geo_lng?.toFixed(5)} • Radius: {loc.geo_radius_m}m
+                          </>
+                        ) : (
+                          <>
+                            Polygon Geofence (
+                            {(() => {
+                              try {
+                                const pts = typeof loc.geo_corners === 'string' ? JSON.parse(loc.geo_corners) : loc.geo_corners;
+                                return Array.isArray(pts) ? `${pts.length} vertices` : 'custom';
+                              } catch {
+                                return 'custom';
+                              }
+                            })()}
+                            )
+                          </>
+                        )}
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <button
                         title="Preview on map"
+                        type="button"
                         onClick={() => setPreviewLocation(previewLocation?.id === loc.id ? null : loc)}
                         className={`p-1.5 rounded-lg transition ${
                           previewLocation?.id === loc.id ? 'bg-amber-500/20 text-amber-400' : 'text-[#a39b94] hover:text-amber-400 hover:bg-amber-500/10'
@@ -597,6 +941,7 @@ export default function AdminSettings() {
                       </button>
                       <button
                         title="Edit preset"
+                        type="button"
                         onClick={() => setEditingLocation(loc)}
                         className="p-1.5 rounded-lg text-[#a39b94] hover:text-[#f5f0ea] hover:bg-[#201c18] transition"
                       >
@@ -604,6 +949,7 @@ export default function AdminSettings() {
                       </button>
                       <button
                         title="Delete preset"
+                        type="button"
                         onClick={() => handleDeleteLocation(loc.id, loc.name)}
                         className="p-1.5 rounded-lg text-[#a39b94] hover:text-red-400 hover:bg-red-500/10 transition"
                       >
@@ -612,47 +958,75 @@ export default function AdminSettings() {
                     </div>
                   </div>
 
+                  {/* Single clear action to apply preset */}
                   <button
                     type="button"
                     onClick={() => applyPresetToVenue(loc)}
-                    className="w-full rounded-lg border border-amber-500/25 bg-amber-500/5 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/15 transition"
+                    className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition flex items-center justify-center gap-1.5"
                   >
-                    Apply to Active Venue
+                    <Check className="h-3.5 w-3.5" />
+                    <span>Apply to Active Venue</span>
                   </button>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Preview panel */}
+          {/* Preset Preview Panel — Accurately displays geometry without circular fallback */}
           {previewLocation && (
-            <div className="rounded-xl border border-amber-500/25 bg-[#18130e] p-4 space-y-2">
+            <div className="rounded-xl border border-amber-500/30 bg-[#18130e] p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-amber-400">
-                  Previewing: {previewLocation.name}
-                </p>
-                <button onClick={() => setPreviewLocation(null)} className="text-[#a39b94] hover:text-[#f5f0ea]">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+                      Preset Preview
+                    </span>
+                    <span className="text-sm font-semibold text-[#f5f0ea]">
+                      {previewLocation.name}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#a39b94] mt-0.5">
+                    {previewLocation.type === 'polygon'
+                      ? 'Polygon Boundary (displaying exact vertices without circular radius)'
+                      : `Circular Geofence (${previewLocation.geo_radius_m || 100}m radius)`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewLocation(null)}
+                  className="rounded-full p-1 text-[#a39b94] hover:text-[#f5f0ea] hover:bg-[#221c17]"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
+
               <VenueMapPicker
                 lat={previewLocation.geo_lat}
                 lng={previewLocation.geo_lng}
                 radius={previewLocation.geo_radius_m || 100}
+                mode={previewLocation.type || 'circle'}
+                corners={(() => {
+                  try {
+                    return typeof previewLocation.geo_corners === 'string'
+                      ? JSON.parse(previewLocation.geo_corners)
+                      : (previewLocation.geo_corners || []);
+                  } catch {
+                    return [];
+                  }
+                })()}
+                targetEdges={(() => {
+                  try {
+                    const c = typeof previewLocation.geo_corners === 'string'
+                      ? JSON.parse(previewLocation.geo_corners)
+                      : previewLocation.geo_corners;
+                    return Array.isArray(c) ? c.length : 4;
+                  } catch {
+                    return 4;
+                  }
+                })()}
                 readOnly
-                height="240px"
+                height="260px"
               />
-              <p className="text-[11px] text-[#706860]">
-                Coordinates: {previewLocation.geo_lat?.toFixed(6)}, {previewLocation.geo_lng?.toFixed(6)}
-                {previewLocation.type === 'circle' && ` • Radius: ${previewLocation.geo_radius_m}m`}
-              </p>
-              <button
-                type="button"
-                onClick={() => applyPresetToVenue(previewLocation)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-1.5 text-xs font-bold text-[#080605]"
-              >
-                <Check className="h-3.5 w-3.5" /> Apply This Preset
-              </button>
             </div>
           )}
         </div>

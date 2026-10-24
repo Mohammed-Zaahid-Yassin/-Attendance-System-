@@ -96,11 +96,19 @@ function checkGeoFence(session, studentLat, studentLng) {
   }
 
   // ── 3. Determine geofence mode from session ───────────────────────────────
-  // Prefer explicit geo_type field; fall back to presence of geo_corners
   const geoType = session.geo_type || (session.geo_corners ? 'polygon' : 'circle');
 
   // ── 4. Polygon mode ───────────────────────────────────────────────────────
-  if (geoType === 'polygon' && session.geo_corners) {
+  if (geoType === 'polygon') {
+    if (!session.geo_corners) {
+      console.warn(`[GeoCheck] Session ${session.id} is set to polygon mode but has no geo_corners configured`);
+      return {
+        allowed: false,
+        code: 'VENUE_NOT_CONFIGURED',
+        reason: 'The venue polygon boundary has not been configured. Please contact the administrator.'
+      };
+    }
+
     let corners;
     try {
       corners = typeof session.geo_corners === 'string'
@@ -108,42 +116,44 @@ function checkGeoFence(session, studentLat, studentLng) {
         : session.geo_corners;
     } catch {
       console.warn('[GeoCheck] geo_corners JSON parse failed for session', session.id);
-      // Malformed polygon — fall through to circle check rather than blocking all students
-    }
-
-    if (corners) {
-      const validation = validatePolygonCorners(corners);
-      if (!validation.valid) {
-        console.warn(`[GeoCheck] Invalid polygon for session ${session.id}: ${validation.reason}`);
-        return {
-          allowed: false,
-          code: 'POLYGON_INVALID',
-          reason: `Venue polygon configuration error: ${validation.reason}. Please contact the administrator.`
-        };
-      }
-
-      const isInside = isPointInPolygon(sLat, sLng, corners);
-      if (isInside) {
-        return {
-          allowed: true,
-          code: 'INSIDE_POLYGON',
-          reason: 'Verified inside designated venue boundary'
-        };
-      }
-
-      // Calculate nearest distance from any polygon edge corner for diagnostics
-      let minDistance = Infinity;
-      for (const pt of corners) {
-        const d = haversineDistance(parseFloat(pt.lat), parseFloat(pt.lng), sLat, sLng);
-        if (d < minDistance) minDistance = d;
-      }
       return {
         allowed: false,
-        code: 'OUTSIDE_BOUNDARY',
-        distance: Math.round(minDistance),
-        reason: `Your location is outside the designated attendance area (approximately ${Math.round(minDistance)}m from the venue boundary). Make sure you are physically present in the correct classroom or auditorium.`
+        code: 'POLYGON_INVALID',
+        reason: 'Venue polygon configuration could not be parsed. Please contact the administrator.'
       };
     }
+
+    const validation = validatePolygonCorners(corners);
+    if (!validation.valid) {
+      console.warn(`[GeoCheck] Invalid polygon for session ${session.id}: ${validation.reason}`);
+      return {
+        allowed: false,
+        code: 'POLYGON_INVALID',
+        reason: `Venue polygon configuration error: ${validation.reason}. Please contact the administrator.`
+      };
+    }
+
+    const isInside = isPointInPolygon(sLat, sLng, corners);
+    if (isInside) {
+      return {
+        allowed: true,
+        code: 'INSIDE_POLYGON',
+        reason: 'Verified inside designated venue boundary'
+      };
+    }
+
+    // Calculate nearest distance from any polygon edge corner for diagnostics
+    let minDistance = Infinity;
+    for (const pt of corners) {
+      const d = haversineDistance(parseFloat(pt.lat), parseFloat(pt.lng), sLat, sLng);
+      if (d < minDistance) minDistance = d;
+    }
+    return {
+      allowed: false,
+      code: 'OUTSIDE_BOUNDARY',
+      distance: Math.round(minDistance),
+      reason: `Your location is outside the designated attendance area (approximately ${Math.round(minDistance)}m from the venue boundary). Make sure you are physically present in the correct classroom or auditorium.`
+    };
   }
 
   // ── 5. Circle mode (default) ──────────────────────────────────────────────

@@ -10,23 +10,25 @@ import {
 } from 'lucide-react';
 
 /**
- * ClockRingTimer — SVG clock-hand style outline around the QR code.
+ * ClockRingTimer — High-contrast circular progress countdown outline surrounding the QR code.
  *
- * One full clockwise revolution = `totalMs` milliseconds.
- * The hand starts at 12 o'clock and sweeps clockwise.
- * Uses server-issued `expiresAt` (Unix ms) for accuracy.
- * rAF-based — stays smooth; recovers from tab suspension.
+ * Designed specifically for high visibility from a distance on auditorium and classroom projectors:
+ * - High-contrast vibrant orange progress arc (#f97316 / #fb923c)
+ * - Clear, high-visibility track (rgba(255, 235, 215, 0.22))
+ * - Glowing circular endpoint bead following the progress tip
+ * - Sized outside the QR square so the white card corners never occlude the ring
+ * - Server-synced via expiresAt with rAF loop and visibility recovery
  */
-function ClockRingTimer({ expiresAt, totalMs, size = 300 }) {
+function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
   const rafRef = useRef(null);
-  const [progress, setProgress] = useState(1); // 1 = full (just issued), 0 = expired
+  const [progress, setProgress] = useState(1); // 1 = full, 0 = expired
 
   const tick = useCallback(() => {
     const now = Date.now();
-    const remaining = expiresAt - now;
+    const remaining = Math.max(0, expiresAt - now);
     const p = Math.max(0, Math.min(1, remaining / totalMs));
     setProgress(p);
-    if (p > 0) {
+    if (remaining > 0) {
       rafRef.current = requestAnimationFrame(tick);
     }
   }, [expiresAt, totalMs]);
@@ -34,29 +36,38 @@ function ClockRingTimer({ expiresAt, totalMs, size = 300 }) {
   useEffect(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [tick]);
 
-  const strokeWidth = 6;
-  const radius = size / 2 - strokeWidth / 2 - 4;
+  const strokeWidth = 9;
+  const radius = Math.max(20, size / 2 - strokeWidth - 6);
   const cx = size / 2;
   const cy = size / 2;
   const circumference = 2 * Math.PI * radius;
-  // Offset: starts at 12 o'clock (SVG default starts at 3 o'clock → rotate -90°)
+  // Sweep: starts at 12 o'clock (-90°), sweeps clockwise as time elapses
   const dashOffset = circumference * (1 - progress);
 
-  // Clock hand: line from center to edge at current angle
-  const angle = (1 - progress) * 2 * Math.PI - Math.PI / 2; // -90° offset
-  const handLength = radius - 4;
-  const hx = cx + handLength * Math.cos(angle);
-  const hy = cy + handLength * Math.sin(angle);
+  // Endpoint bead at current angle
+  const angle = (1 - progress) * 2 * Math.PI - Math.PI / 2;
+  const beadX = cx + radius * Math.cos(angle);
+  const beadY = cy + radius * Math.sin(angle);
 
-  // Color shifts from amber → red as time runs out
+  // Color warning shift when under 25% remaining time
   const isLow = progress < 0.25;
-  const ringColor = isLow ? '#ef4444' : '#f59e0b';
-  const handColor = isLow ? '#fca5a5' : '#fcd34d';
+  const ringColor = isLow ? '#ef4444' : '#f97316';
+  const trackColor = isLow ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 235, 215, 0.22)';
+  const beadGlow = isLow ? 'rgba(239, 68, 68, 0.45)' : 'rgba(249, 115, 22, 0.45)';
 
   return (
     <svg
@@ -64,23 +75,42 @@ function ClockRingTimer({ expiresAt, totalMs, size = 300 }) {
       height={size}
       style={{
         position: 'absolute',
-        top: 0,
-        left: 0,
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
         pointerEvents: 'none',
-        // Respect reduced-motion: stop ring animation (hand still shows state)
+        zIndex: 5
       }}
       aria-hidden="true"
     >
-      {/* Background track ring */}
+      <defs>
+        <filter id="timerGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+
+      {/* Outer subtle halo ring */}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={radius + strokeWidth / 2 + 1}
+        fill="none"
+        stroke="rgba(245, 158, 11, 0.08)"
+        strokeWidth={1}
+      />
+
+      {/* Subdued but clearly visible background track for entire circumference */}
       <circle
         cx={cx}
         cy={cy}
         r={radius}
         fill="none"
-        stroke="rgba(255,235,215,0.08)"
+        stroke={trackColor}
         strokeWidth={strokeWidth}
       />
-      {/* Progress arc */}
+
+      {/* Active High-Contrast Progress Arc */}
       <circle
         cx={cx}
         cy={cy}
@@ -92,21 +122,28 @@ function ClockRingTimer({ expiresAt, totalMs, size = 300 }) {
         strokeDasharray={circumference}
         strokeDashoffset={dashOffset}
         transform={`rotate(-90 ${cx} ${cy})`}
-        style={{ transition: 'stroke 0.5s ease' }}
+        style={{
+          filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.5))',
+          transition: 'stroke 0.4s ease'
+        }}
       />
-      {/* Clock center dot */}
-      <circle cx={cx} cy={cy} r={3} fill={handColor} />
-      {/* Clock hand */}
-      <line
-        x1={cx}
-        y1={cy}
-        x2={hx}
-        y2={hy}
-        stroke={handColor}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        opacity={0.9}
-      />
+
+      {/* Moving Circular Endpoint Bead Indicator */}
+      {progress > 0 && (
+        <g>
+          {/* Outer glow ring */}
+          <circle cx={beadX} cy={beadY} r={10} fill={beadGlow} />
+          {/* Main bead marker */}
+          <circle
+            cx={beadX}
+            cy={beadY}
+            r={6}
+            fill={ringColor}
+            stroke="#ffffff"
+            strokeWidth={2}
+          />
+        </g>
+      )}
     </svg>
   );
 }
@@ -127,14 +164,17 @@ export default function DisplayPage() {
 
   const qrWrapRef = useRef(null);
 
-  // ── Measure available space for QR ────────────────────────────────────
+  // ── Measure available space for QR and surrounding countdown ring ────
   useEffect(() => {
     const measure = () => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      // QR should fill most of available space, capped at 520px
-      const available = Math.min(vw * 0.9, vh * 0.55, 520);
-      setQrContainerSize(Math.floor(Math.max(240, available)));
+      const availableW = vw * 0.85;
+      const availableH = vh * 0.52;
+      const maxOuter = Math.min(availableW, availableH, 560);
+      // Ring outer diameter is Math.ceil(qr * 1.44 + 32), so derive qr from maxOuter:
+      const computedQr = Math.floor(Math.max(200, (maxOuter - 32) / 1.44));
+      setQrContainerSize(computedQr);
     };
     measure();
     window.addEventListener('resize', measure);
@@ -314,38 +354,41 @@ export default function DisplayPage() {
 
       {/* Main Display: centered QR + clock ring */}
       <main className="flex flex-1 flex-col items-center justify-center py-6 sm:py-8">
-        {/* QR + integrated clock ring */}
-        <div
-          ref={qrWrapRef}
-          className="relative flex items-center justify-center"
-          style={{ width: qrContainerSize + 28, height: qrContainerSize + 28 }}
-        >
-          {/* Clock ring SVG (behind QR) */}
-          {!isStaticQr && tokenData?.expires_at && (
-            <ClockRingTimer
-              expiresAt={expiresAt}
-              totalMs={Math.max(totalMs, 5000)}
-              size={qrContainerSize + 28}
-            />
-          )}
-
-          {/* Static QR mode: simple green pulse ring instead */}
-          {isStaticQr && (
+        {/* QR + integrated countdown ring */}
+        {(() => {
+          const ringOuterSize = Math.ceil(qrContainerSize * 1.44 + 32);
+          return (
             <div
-              className="absolute inset-0 rounded-full border-2 border-emerald-500/40 animate-pulse"
-              style={{ borderRadius: '50%' }}
-            />
-          )}
+              ref={qrWrapRef}
+              className="relative flex items-center justify-center my-3"
+              style={{ width: ringOuterSize, height: ringOuterSize }}
+            >
+              {/* Clock ring SVG surrounding the QR code */}
+              {!isStaticQr && tokenData?.expires_at && (
+                <ClockRingTimer
+                  expiresAt={expiresAt}
+                  totalMs={Math.max(totalMs, 5000)}
+                  size={ringOuterSize}
+                />
+              )}
 
-          {/* QR Image */}
-          <div
-            className="relative z-10 rounded-2xl bg-white shadow-2xl overflow-hidden"
-            style={{
-              width: qrContainerSize,
-              height: qrContainerSize,
-              padding: Math.floor(qrContainerSize * 0.025)
-            }}
-          >
+              {/* Static QR mode: prominent green status ring instead */}
+              {isStaticQr && (
+                <div
+                  className="absolute rounded-full border-2 border-emerald-500/40 animate-pulse pointer-events-none"
+                  style={{ width: ringOuterSize - 16, height: ringOuterSize - 16 }}
+                />
+              )}
+
+              {/* QR Image card */}
+              <div
+                className="relative z-10 rounded-2xl bg-white shadow-2xl overflow-hidden border border-[rgba(255,235,215,0.2)]"
+                style={{
+                  width: qrContainerSize,
+                  height: qrContainerSize,
+                  padding: Math.floor(qrContainerSize * 0.025)
+                }}
+              >
             {tokenData?.qr_code ? (
               <img
                 src={tokenData.qr_code}
@@ -360,6 +403,8 @@ export default function DisplayPage() {
             )}
           </div>
         </div>
+          );
+        })()}
 
         {/* Screen PIN (if required) */}
         {isPinRequired && (

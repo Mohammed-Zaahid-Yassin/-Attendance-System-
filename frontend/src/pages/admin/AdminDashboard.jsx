@@ -768,21 +768,23 @@ export default function AdminDashboard() {
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[#a39b94]">Geofence Radius:</span>
-                      <span className="font-mono text-amber-400 font-bold">{editMapRadius} meters</span>
+                  {editMapType === 'circle' && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[#a39b94]">Geofence Radius:</span>
+                        <span className="font-mono text-amber-400 font-bold">{editMapRadius} meters</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="25"
+                        max="500"
+                        step="5"
+                        value={editMapRadius}
+                        onChange={(e) => setEditMapRadius(parseInt(e.target.value, 10))}
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
                     </div>
-                    <input
-                      type="range"
-                      min="25"
-                      max="500"
-                      step="5"
-                      value={editMapRadius}
-                      onChange={(e) => setEditMapRadius(parseInt(e.target.value, 10))}
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
+                  )}
 
                   <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3 space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea]">
@@ -1108,21 +1110,23 @@ export default function AdminDashboard() {
                         />
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#a39b94]">Geofence Radius:</span>
-                          <span className="font-mono text-amber-400 font-bold">{customRadius} meters</span>
+                      {customGeoType === 'circle' && (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-[#a39b94]">Geofence Radius:</span>
+                            <span className="font-mono text-amber-400 font-bold">{customRadius} meters</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="25"
+                            max="500"
+                            step="5"
+                            value={customRadius}
+                            onChange={(e) => setCustomRadius(parseInt(e.target.value, 10))}
+                            className="w-full accent-amber-500 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="range"
-                          min="25"
-                          max="500"
-                          step="5"
-                          value={customRadius}
-                          onChange={(e) => setCustomRadius(parseInt(e.target.value, 10))}
-                          className="w-full accent-amber-500 cursor-pointer"
-                        />
-                      </div>
+                      )}
 
                       <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-3 space-y-2">
                         <label className="flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea]">

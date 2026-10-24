@@ -79,6 +79,7 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS venue_configs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       venue_name TEXT NOT NULL DEFAULT 'MVJCE Central Auditorium',
+      geo_type TEXT NOT NULL DEFAULT 'circle',
       geo_lat REAL NOT NULL DEFAULT 12.985300,
       geo_lng REAL NOT NULL DEFAULT 77.762465,
       geo_radius_m INTEGER NOT NULL DEFAULT 100,
@@ -88,19 +89,32 @@ function initDb() {
     );
   `);
 
+  // Migrate venue_configs if missing columns
+  try {
+    const venueCols = db.prepare(`PRAGMA table_info(venue_configs)`).all().map(c => c.name);
+    if (!venueCols.includes('geo_type')) {
+      db.exec(`ALTER TABLE venue_configs ADD COLUMN geo_type TEXT DEFAULT 'circle'`);
+    }
+    if (!venueCols.includes('geo_corners')) {
+      db.exec(`ALTER TABLE venue_configs ADD COLUMN geo_corners TEXT`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration venue_configs]', migErr);
+  }
+
   // Seed or update default venue to accurate MVJCE campus coordinates
   const existingVenue = db.prepare('SELECT id, geo_lat FROM venue_configs LIMIT 1').get();
   if (!existingVenue) {
     db.prepare(`
-      INSERT INTO venue_configs (venue_name, geo_lat, geo_lng, geo_radius_m)
-      VALUES (?, ?, ?, ?)
-    `).run('MVJCE Central Auditorium', 12.985300, 77.762465, 100);
+      INSERT INTO venue_configs (venue_name, geo_type, geo_lat, geo_lng, geo_radius_m)
+      VALUES (?, ?, ?, ?, ?)
+    `).run('MVJCE Central Auditorium', 'circle', 12.985300, 77.762465, 100);
     console.log('[DB] Default venue configuration initialized: MVJCE Central Auditorium');
   } else if (existingVenue.geo_lat < 12.9840) {
     // Update legacy inaccurate coordinates to real MVJCE campus coordinates
     db.prepare(`
       UPDATE venue_configs 
-      SET geo_lat = 12.985300, geo_lng = 77.762465, geo_radius_m = 100, venue_name = 'MVJCE Central Auditorium'
+      SET geo_lat = 12.985300, geo_lng = 77.762465, geo_radius_m = 100, venue_name = 'MVJCE Central Auditorium', geo_type = 'circle'
       WHERE id = ?
     `).run(existingVenue.id);
   }
@@ -129,7 +143,8 @@ function initDb() {
       db.exec(`ALTER TABLE saved_locations ADD COLUMN description TEXT`);
     }
     if (!locCols.includes('updated_at')) {
-      db.exec(`ALTER TABLE saved_locations ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+      // In SQLite ALTER TABLE ADD COLUMN requires constant default or NULL
+      db.exec(`ALTER TABLE saved_locations ADD COLUMN updated_at DATETIME`);
     }
   } catch (migErr) {
     console.error('[DB Migration saved_locations]', migErr);

@@ -526,52 +526,69 @@ router.get('/venue-config', (req, res) => {
 
 router.post('/venue-config', (req, res) => {
   const { venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, mappls_api_key } = req.body;
-  if (!geo_lat || !geo_lng) {
-    return res.status(400).json({ error: 'Latitude and Longitude are required' });
+  const venueType = geo_type === 'polygon' ? 'polygon' : 'circle';
+  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+
+  let effLat = parseFloat(geo_lat);
+  let effLng = parseFloat(geo_lng);
+
+  if ((isNaN(effLat) || isNaN(effLng)) && geo_corners) {
+    try {
+      const parsed = typeof geo_corners === 'string' ? JSON.parse(geo_corners) : geo_corners;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        effLat = parsed.reduce((sum, p) => sum + parseFloat(p.lat), 0) / parsed.length;
+        effLng = parsed.reduce((sum, p) => sum + parseFloat(p.lng), 0) / parsed.length;
+      }
+    } catch {}
   }
 
-  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
-  const venueType = geo_type === 'polygon' ? 'polygon' : 'circle';
+  if (isNaN(effLat) || isNaN(effLng)) {
+    return res.status(400).json({ error: 'Valid coordinates or polygon vertices are required' });
+  }
 
   const existing = db.prepare('SELECT id FROM venue_configs ORDER BY id DESC LIMIT 1').get();
   if (existing) {
-    // Add geo_type column if it doesn't exist yet (migration)
-    try {
-      const cols = db.prepare('PRAGMA table_info(venue_configs)').all().map(c => c.name);
-      if (!cols.includes('geo_type')) {
-        db.exec('ALTER TABLE venue_configs ADD COLUMN geo_type TEXT DEFAULT \'circle\'');
-      }
-    } catch {}
     db.prepare(`
       UPDATE venue_configs 
-      SET venue_name = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, geo_type = ?, mappls_api_key = ?, updated_at = CURRENT_TIMESTAMP
+      SET venue_name = ?, geo_type = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, mappls_api_key = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       venue_name || 'MVJCE Central Auditorium',
-      parseFloat(geo_lat),
-      parseFloat(geo_lng),
+      venueType,
+      parseFloat(effLat.toFixed(6)),
+      parseFloat(effLng.toFixed(6)),
       parseInt(geo_radius_m, 10) || 100,
       cornersJson,
-      venueType,
       mappls_api_key || '',
       existing.id
     );
   } else {
     db.prepare(`
-      INSERT INTO venue_configs (venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, mappls_api_key)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO venue_configs (venue_name, geo_type, geo_lat, geo_lng, geo_radius_m, geo_corners, mappls_api_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       venue_name || 'MVJCE Central Auditorium',
-      parseFloat(geo_lat),
-      parseFloat(geo_lng),
+      venueType,
+      parseFloat(effLat.toFixed(6)),
+      parseFloat(effLng.toFixed(6)),
       parseInt(geo_radius_m, 10) || 100,
       cornersJson,
       mappls_api_key || ''
     );
   }
 
-  const updated = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
-  return res.json({ success: true, message: 'Venue configuration saved successfully', config: updated });
+  return res.json({ 
+    success: true, 
+    message: 'Venue configuration saved successfully',
+    config: {
+      venue_name: venue_name || 'MVJCE Central Auditorium',
+      geo_type: venueType,
+      geo_lat: parseFloat(effLat.toFixed(6)),
+      geo_lng: parseFloat(effLng.toFixed(6)),
+      geo_radius_m: parseInt(geo_radius_m, 10) || 100,
+      geo_corners: cornersJson
+    }
+  });
 });
 
 // 11. Saved Preset Locations Management
@@ -585,12 +602,26 @@ router.post('/saved-locations', (req, res) => {
   if (!name) {
     return res.status(400).json({ error: 'Location name is required' });
   }
-  if (!geo_lat || !geo_lng) {
-    return res.status(400).json({ error: 'Latitude and longitude are required' });
-  }
 
   const locType = type === 'polygon' ? 'polygon' : 'circle';
   const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+
+  let effLat = parseFloat(geo_lat);
+  let effLng = parseFloat(geo_lng);
+
+  if ((isNaN(effLat) || isNaN(effLng)) && geo_corners) {
+    try {
+      const parsed = typeof geo_corners === 'string' ? JSON.parse(geo_corners) : geo_corners;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        effLat = parsed.reduce((sum, p) => sum + parseFloat(p.lat), 0) / parsed.length;
+        effLng = parsed.reduce((sum, p) => sum + parseFloat(p.lng), 0) / parsed.length;
+      }
+    } catch {}
+  }
+
+  if (isNaN(effLat) || isNaN(effLng)) {
+    return res.status(400).json({ error: 'Valid coordinates or polygon vertices are required' });
+  }
 
   if (is_default) {
     db.prepare('UPDATE saved_locations SET is_default = 0').run();
@@ -605,8 +636,8 @@ router.post('/saved-locations', (req, res) => {
     name.trim(),
     (description || '').trim(),
     locType,
-    parseFloat(geo_lat),
-    parseFloat(geo_lng),
+    parseFloat(effLat.toFixed(6)),
+    parseFloat(effLng.toFixed(6)),
     geo_radius_m ? parseInt(geo_radius_m, 10) : 100,
     cornersJson,
     is_default ? 1 : 0
