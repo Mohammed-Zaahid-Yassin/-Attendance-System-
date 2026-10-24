@@ -302,6 +302,62 @@ router.delete('/attendance/:attendanceId', (req, res) => {
   return res.json({ success: true, message: 'Attendance record removed' });
 });
 
+// Edit an attendance entry (Update Student ID or GPS Verification)
+router.put('/attendance/:attendanceId', (req, res) => {
+  const id = parseInt(req.params.attendanceId, 10);
+  const { student_id, geo_verified, marked_at } = req.body;
+
+  const current = db.prepare('SELECT * FROM attendance WHERE id = ?').get(id);
+  if (!current) {
+    return res.status(404).json({ error: 'Attendance record not found' });
+  }
+
+  const cleanStudentId = student_id ? student_id.trim().toUpperCase() : current.student_id;
+  const student = db.prepare('SELECT * FROM students WHERE student_id = ?').get(cleanStudentId);
+  if (!student) {
+    return res.status(404).json({ error: `Student ID "${cleanStudentId}" not found in roster` });
+  }
+
+  try {
+    db.prepare(`
+      UPDATE attendance
+      SET student_id = ?, geo_verified = ?, marked_at = COALESCE(?, marked_at)
+      WHERE id = ?
+    `).run(
+      cleanStudentId,
+      geo_verified !== undefined ? (geo_verified ? 1 : 0) : current.geo_verified,
+      marked_at || null,
+      id
+    );
+
+    const updated = db.prepare(`
+      SELECT 
+        a.id,
+        a.marked_at,
+        a.lat,
+        a.lng,
+        a.geo_verified,
+        s.student_id,
+        s.name,
+        s.usn,
+        s.department,
+        s.year,
+        s.cycle,
+        s.mobile
+      FROM attendance a
+      JOIN students s ON a.student_id = s.student_id
+      WHERE a.id = ?
+    `).get(id);
+
+    return res.json({ success: true, message: 'Attendance record updated successfully', record: updated });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: 'This student already has an attendance record in this session' });
+    }
+    return res.status(500).json({ error: 'Database update failed: ' + err.message });
+  }
+});
+
 // 8. Student Roster Management (Search, Filter, List)
 router.get('/students', (req, res) => {
   const { search, year, department } = req.query;
@@ -329,6 +385,55 @@ router.get('/students', (req, res) => {
 
   const students = db.prepare(query).all(...params);
   return res.json({ total: students.length, students });
+});
+
+// Edit a student roster entry
+router.put('/students/:studentId', (req, res) => {
+  const currentStudentId = req.params.studentId.toUpperCase();
+  const { name, usn, department, year, cycle, mobile, new_student_id } = req.body;
+
+  const existing = db.prepare('SELECT * FROM students WHERE student_id = ?').get(currentStudentId);
+  if (!existing) {
+    return res.status(404).json({ error: 'Student not found in roster' });
+  }
+
+  const finalName = name !== undefined && name !== null ? name.trim() : existing.name;
+  const finalUsn = usn !== undefined && usn !== null ? usn.trim().toUpperCase() : existing.usn;
+  const finalDept = department !== undefined && department !== null ? department.trim() : existing.department;
+  const finalYear = year !== undefined && year !== null ? parseInt(year, 10) : existing.year;
+  const finalCycle = cycle !== undefined ? cycle : existing.cycle;
+  const finalMobile = mobile !== undefined && mobile !== null ? mobile.trim() : existing.mobile;
+  const finalStudentId = new_student_id !== undefined && new_student_id !== null ? new_student_id.trim().toUpperCase() : existing.student_id;
+
+  try {
+    db.prepare(`
+      UPDATE students 
+      SET name = ?, usn = ?, department = ?, year = ?, cycle = ?, mobile = ?, student_id = ?
+      WHERE id = ?
+    `).run(
+      finalName,
+      finalUsn,
+      finalDept,
+      finalYear,
+      finalCycle,
+      finalMobile,
+      finalStudentId,
+      existing.id
+    );
+
+    // If student_id changed, update attendance records referencing it
+    if (finalStudentId !== currentStudentId) {
+      db.prepare('UPDATE attendance SET student_id = ? WHERE student_id = ?').run(finalStudentId, currentStudentId);
+    }
+
+    const updated = db.prepare('SELECT * FROM students WHERE id = ?').get(existing.id);
+    return res.json({ success: true, message: 'Student roster entry updated successfully', student: updated });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: 'USN or Student ID already exists for another student' });
+    }
+    return res.status(500).json({ error: 'Failed to update student: ' + err.message });
+  }
 });
 
 // Delete a student from roster

@@ -15,7 +15,8 @@ import {
   FileSpreadsheet,
   Filter,
   ArrowUpDown,
-  X
+  X,
+  Edit2
 } from 'lucide-react';
 
 export default function LiveAttendance() {
@@ -34,6 +35,13 @@ export default function LiveAttendance() {
   const [manualStudentId, setManualStudentId] = useState('');
   const [manualLoading, setManualLoading] = useState(false);
   const [manualMsg, setManualMsg] = useState('');
+
+  // Edit attendance record state
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editStudentId, setEditStudentId] = useState('');
+  const [editGeoVerified, setEditGeoVerified] = useState(true);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const token = localStorage.getItem('admin_token');
   const axiosConfig = {
@@ -145,6 +153,41 @@ export default function LiveAttendance() {
       setRecords((prev) => prev.filter((r) => r.id !== attendanceId));
     } catch (err) {
       alert('Failed to delete attendance record: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  // Open Edit Modal
+  const openEditModal = (rec) => {
+    setEditingRecord(rec);
+    setEditStudentId(rec.student_id);
+    setEditGeoVerified(rec.geo_verified === 1 || rec.geo_verified === true);
+    setEditError('');
+  };
+
+  // Save Edit Changes
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    setEditLoading(true);
+    setEditError('');
+
+    try {
+      const res = await axios.put(
+        `/api/admin/attendance/${editingRecord.id}`,
+        {
+          student_id: editStudentId.trim().toUpperCase(),
+          geo_verified: editGeoVerified ? 1 : 0
+        },
+        axiosConfig
+      );
+
+      const updated = res.data.record;
+      setRecords((prev) => prev.map((r) => (r.id === editingRecord.id ? { ...r, ...updated } : r)));
+      setEditingRecord(null);
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Failed to update attendance record');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -458,14 +501,24 @@ export default function LiveAttendance() {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRecord(r.id)}
-                          className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/10 transition"
-                          title="Remove record"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(r)}
+                            className="rounded-lg p-1.5 text-amber-400 hover:bg-amber-500/10 transition"
+                            title="Edit attendance entry"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRecord(r.id)}
+                            className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/10 transition"
+                            title="Remove record"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -475,6 +528,83 @@ export default function LiveAttendance() {
           </div>
         </div>
       </div>
+
+      {/* Edit Attendance Record Modal */}
+      {editingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3">
+              <div>
+                <h3 className="font-serif text-lg font-normal text-[#f5f0ea]">
+                  Edit Attendance Entry
+                </h3>
+                <p className="text-[11px] text-[#a39b94]">
+                  {editingRecord.name} • {editingRecord.usn}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRecord(null)}
+                className="rounded-full p-1.5 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  Student ID
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editStudentId}
+                  onChange={(e) => setEditStudentId(e.target.value.toUpperCase())}
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 font-mono text-xs uppercase text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  Geofence GPS Status
+                </label>
+                <select
+                  value={editGeoVerified ? '1' : '0'}
+                  onChange={(e) => setEditGeoVerified(e.target.value === '1')}
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="1">🟢 Verified Inside Geofence</option>
+                  <option value="0">⚪ Bypassed / Manual Admin Entry</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRecord(null)}
+                  className="flex-1 rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] py-2 text-xs font-semibold uppercase tracking-wider text-[#a39b94] hover:text-[#f5f0ea]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="flex-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-2 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow hover:opacity-95 disabled:opacity-50"
+                >
+                  {editLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
