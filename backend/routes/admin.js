@@ -63,6 +63,16 @@ router.post('/sessions/start', (req, res) => {
   let radius = geo_radius_m ? parseInt(geo_radius_m, 10) : 100;
   let cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
 
+  if (req.body.saved_location_id) {
+    const loc = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(req.body.saved_location_id);
+    if (loc) {
+      lat = loc.geo_lat;
+      lng = loc.geo_lng;
+      radius = loc.geo_radius_m || 100;
+      cornersJson = loc.geo_corners;
+    }
+  }
+
   if (lat === null || lng === null) {
     const defaultVenue = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
     if (defaultVenue) {
@@ -153,18 +163,37 @@ router.get('/sessions/active', (req, res) => {
   return res.json({ sessions });
 });
 
-// 6. Update Geo-fence for a Session (Toggle on/off, change 4-corner polygon, coords/radius)
+// 6. Update Geo-fence for a Session (Toggle on/off, change 4-corner polygon, coords/radius, or apply saved location)
 router.patch('/sessions/:id/geofence', (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
-  const { enabled, lat, lng, radius, corners } = req.body;
+  const { enabled, lat, lng, radius, corners, saved_location_id } = req.body;
 
   const session = db.prepare('SELECT id FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
 
+  if (saved_location_id) {
+    const loc = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(saved_location_id);
+    if (loc) {
+      db.prepare(`
+        UPDATE sessions 
+        SET geo_fence_enabled = 1, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?
+        WHERE id = ?
+      `).run(
+        loc.geo_lat,
+        loc.geo_lng,
+        loc.geo_radius_m || 100,
+        loc.geo_corners,
+        sessionId
+      );
+      const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+      return res.json({ success: true, session: updated, message: `Geofence updated to: ${loc.name}` });
+    }
+  }
+
   const cornersJson = corners !== undefined 
-    ? (typeof corners === 'string' ? corners : JSON.stringify(corners)) 
+    ? (corners ? (typeof corners === 'string' ? corners : JSON.stringify(corners)) : null)
     : session.geo_corners;
 
   const updateStmt = db.prepare(`
@@ -174,7 +203,7 @@ router.patch('/sessions/:id/geofence', (req, res) => {
   `);
 
   updateStmt.run(
-    enabled ? 1 : 0,
+    enabled !== undefined ? (enabled ? 1 : 0) : session.geo_fence_enabled,
     lat !== undefined ? (lat ? parseFloat(lat) : null) : session.geo_lat,
     lng !== undefined ? (lng ? parseFloat(lng) : null) : session.geo_lng,
     radius !== undefined ? parseInt(radius, 10) : (session.geo_radius_m || 100),
@@ -183,7 +212,7 @@ router.patch('/sessions/:id/geofence', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
-  return res.json({ success: true, session: updated });
+  return res.json({ success: true, session: updated, message: 'Geofence coordinates and radius updated' });
 });
 
 // 6b. On-the-fly Toggle 1: Enable / Disable Geofence toggle
@@ -528,6 +557,89 @@ router.post('/venue-config', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
   return res.json({ success: true, message: 'Venue configuration saved successfully', config: updated });
+});
+
+// 11. Saved Preset Locations Management
+router.get('/saved-locations', (req, res) => {
+  const locations = db.prepare('SELECT * FROM saved_locations ORDER BY is_default DESC, id ASC').all();
+  return res.json({ success: true, locations });
+});
+
+router.post('/saved-locations', (req, res) => {
+  const { name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Location name is required' });
+  }
+
+  const locType = type === 'polygon' ? 'polygon' : 'circle';
+  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+
+  if (is_default) {
+    db.prepare('UPDATE saved_locations SET is_default = 0').run();
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO saved_locations (name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const result = insert.run(
+    name.trim(),
+    locType,
+    geo_lat ? parseFloat(geo_lat) : null,
+    geo_lng ? parseFloat(geo_lng) : null,
+    geo_radius_m ? parseInt(geo_radius_m, 10) : 100,
+    cornersJson,
+    is_default ? 1 : 0
+  );
+
+  const newLoc = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(result.lastInsertRowid);
+  return res.status(201).json({ success: true, location: newLoc, message: 'Preset location saved successfully' });
+});
+
+router.put('/saved-locations/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
+
+  const existing = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Saved location not found' });
+  }
+
+  if (is_default) {
+    db.prepare('UPDATE saved_locations SET is_default = 0').run();
+  }
+
+  const cornersJson = geo_corners !== undefined 
+    ? (geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null)
+    : existing.geo_corners;
+
+  db.prepare(`
+    UPDATE saved_locations 
+    SET name = ?, type = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, is_default = COALESCE(?, is_default)
+    WHERE id = ?
+  `).run(
+    name ? name.trim() : existing.name,
+    type || existing.type,
+    geo_lat !== undefined ? (geo_lat ? parseFloat(geo_lat) : null) : existing.geo_lat,
+    geo_lng !== undefined ? (geo_lng ? parseFloat(geo_lng) : null) : existing.geo_lng,
+    geo_radius_m !== undefined ? parseInt(geo_radius_m, 10) : existing.geo_radius_m,
+    cornersJson,
+    is_default !== undefined ? (is_default ? 1 : 0) : null,
+    id
+  );
+
+  const updated = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(id);
+  return res.json({ success: true, location: updated, message: 'Saved location updated' });
+});
+
+router.delete('/saved-locations/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const result = db.prepare('DELETE FROM saved_locations WHERE id = ?').run(id);
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Saved location not found' });
+  }
+  return res.json({ success: true, message: 'Location deleted from saved presets' });
 });
 
 module.exports = router;

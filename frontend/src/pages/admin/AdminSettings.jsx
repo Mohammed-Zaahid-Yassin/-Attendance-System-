@@ -26,8 +26,8 @@ export default function AdminSettings() {
 
   // Persistent Venue Config state
   const [venueName, setVenueName] = useState('MVJCE Central Auditorium');
-  const [geoLat, setGeoLat] = useState(12.983020);
-  const [geoLng, setGeoLng] = useState(77.759970);
+  const [geoLat, setGeoLat] = useState(12.985300);
+  const [geoLng, setGeoLng] = useState(77.762465);
   const [geoRadius, setGeoRadius] = useState(100);
   const [mapplsKey, setMapplsKey] = useState('');
   const [venueLoading, setVenueLoading] = useState(true);
@@ -62,8 +62,8 @@ export default function AdminSettings() {
         if (res.data?.config) {
           const c = res.data.config;
           setVenueName(c.venue_name || 'MVJCE Central Auditorium');
-          setGeoLat(c.geo_lat || 12.983020);
-          setGeoLng(c.geo_lng || 77.759970);
+          setGeoLat(c.geo_lat || 12.985300);
+          setGeoLng(c.geo_lng || 77.762465);
           setGeoRadius(c.geo_radius_m || 100);
           setMapplsKey(c.mappls_api_key || '');
         }
@@ -132,11 +132,11 @@ export default function AdminSettings() {
 
   // Reset to MVJCE Default
   const handleResetDefaults = () => {
-    setGeoLat(12.983020);
-    setGeoLng(77.759970);
+    setGeoLat(12.985300);
+    setGeoLng(77.762465);
     setGeoRadius(100);
     setVenueName('MVJCE Central Auditorium');
-    setVenueMsg('Reset to MVJCE Central Auditorium coordinates.');
+    setVenueMsg('Reset to accurate MVJCE Central Auditorium campus coordinates.');
   };
 
   const handleChangePassword = async (e) => {

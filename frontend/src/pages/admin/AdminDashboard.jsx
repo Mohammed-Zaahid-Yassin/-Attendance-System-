@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminLayout from '../../components/AdminLayout';
+import VenueMapPicker from '../../components/VenueMapPicker';
 import { 
   Users, 
   Radio, 
@@ -31,26 +32,36 @@ export default function AdminDashboard() {
   const [geoEnabled, setGeoEnabled] = useState(false);
   const [pinRequired, setPinRequired] = useState(true);
 
-  // 4 Coordinates for Auditorium Geofence
-  const [corners, setCorners] = useState([
-    { name: 'Corner 1 (NW)', lat: '', lng: '' },
-    { name: 'Corner 2 (NE)', lat: '', lng: '' },
-    { name: 'Corner 3 (SE)', lat: '', lng: '' },
-    { name: 'Corner 4 (SW)', lat: '', lng: '' }
-  ]);
+  // Saved Locations for Geofencing (Choose from 4-5 preset locations or custom map)
+  const [savedLocations, setSavedLocations] = useState([]);
+  const [selectedSavedLocId, setSelectedSavedLocId] = useState('');
+  const [useCustomLocation, setUseCustomLocation] = useState(false);
+  const [customGeoType, setCustomGeoType] = useState('circle'); // 'circle' | 'polygon'
+  const [customLat, setCustomLat] = useState(12.985300);
+  const [customLng, setCustomLng] = useState(77.762465);
+  const [customRadius, setCustomRadius] = useState(100);
+  const [saveCustomAsPreset, setSaveCustomAsPreset] = useState(false);
+  const [customPresetName, setCustomPresetName] = useState('');
+
+  // Active session being edited for Geofence (3 options: 1. Saved locations, 2. Map, 3. GPS)
+  const [editingGeofenceSession, setEditingGeofenceSession] = useState(null);
+  const [geofenceEditTab, setGeofenceEditTab] = useState('saved'); // 'saved' | 'map' | 'gps'
+  const [editSavedLocId, setEditSavedLocId] = useState('');
+  const [editMapLat, setEditMapLat] = useState(12.985300);
+  const [editMapLng, setEditMapLng] = useState(77.762465);
+  const [editMapRadius, setEditMapRadius] = useState(100);
+  const [editMapType, setEditMapType] = useState('circle');
+  const [editGpsLat, setEditGpsLat] = useState(null);
+  const [editGpsLng, setEditGpsLng] = useState(null);
+  const [editGpsRadius, setEditGpsRadius] = useState(100);
+  const [isCapturingGps, setIsCapturingGps] = useState(false);
+  const [gpsError, setGpsError] = useState('');
+  const [saveEditAsPreset, setSaveEditAsPreset] = useState(false);
+  const [editPresetName, setEditPresetName] = useState('');
 
   // Static QR Code data for student registration
   const [staticQrData, setStaticQrData] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
-
-  // Active session being edited for 4-corner coordinates
-  const [editingCornersSessionId, setEditingCornersSessionId] = useState(null);
-  const [activeSessionCorners, setActiveSessionCorners] = useState([
-    { name: 'Corner 1 (NW)', lat: '', lng: '' },
-    { name: 'Corner 2 (NE)', lat: '', lng: '' },
-    { name: 'Corner 3 (SE)', lat: '', lng: '' },
-    { name: 'Corner 4 (SW)', lat: '', lng: '' }
-  ]);
 
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState('');
@@ -71,6 +82,21 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchSavedLocations = async () => {
+    try {
+      const res = await axios.get('/api/admin/saved-locations', axiosConfig);
+      const list = res.data.locations || [];
+      setSavedLocations(list);
+      if (list.length > 0 && !selectedSavedLocId) {
+        const def = list.find((l) => l.is_default) || list[0];
+        setSelectedSavedLocId(String(def.id));
+        setEditSavedLocId(String(def.id));
+      }
+    } catch (err) {
+      console.error('Error fetching saved locations:', err);
+    }
+  };
+
   const fetchStaticRegistrationQR = async () => {
     try {
       const res = await axios.get('/api/admin/registration-qr', axiosConfig);
@@ -82,56 +108,34 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchStatsAndSessions();
+    fetchSavedLocations();
     fetchStaticRegistrationQR();
     const interval = setInterval(fetchStatsAndSessions, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  // Helper to capture current GPS for a specific corner in the creation form
-  const handleCaptureGpsForCorner = (index) => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setCorners((prev) => {
-            const next = [...prev];
-            next[index] = {
-              ...next[index],
-              lat: pos.coords.latitude.toFixed(6),
-              lng: pos.coords.longitude.toFixed(6)
-            };
-            return next;
-          });
-          setGeoEnabled(true);
-        },
-        (err) => {
-          alert('GPS error: ' + err.message);
-        },
-        { enableHighAccuracy: true }
-      );
+  // Capture current GPS for Tab 3 in Geofence Editor
+  const handleCaptureCurrentGps = () => {
+    if (!('geolocation' in navigator)) {
+      setGpsError('Geolocation is not supported by your browser');
+      return;
     }
-  };
 
-  // Helper to capture current GPS for a corner in the active session editor
-  const handleCaptureGpsForActiveCorner = (index) => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setActiveSessionCorners((prev) => {
-            const next = [...prev];
-            next[index] = {
-              ...next[index],
-              lat: pos.coords.latitude.toFixed(6),
-              lng: pos.coords.longitude.toFixed(6)
-            };
-            return next;
-          });
-        },
-        (err) => {
-          alert('GPS error: ' + err.message);
-        },
-        { enableHighAccuracy: true }
-      );
-    }
+    setIsCapturingGps(true);
+    setGpsError('');
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setEditGpsLat(parseFloat(pos.coords.latitude.toFixed(6)));
+        setEditGpsLng(parseFloat(pos.coords.longitude.toFixed(6)));
+        setIsCapturingGps(false);
+      },
+      (err) => {
+        setIsCapturingGps(false);
+        setGpsError('Failed to capture GPS: ' + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   // Start new session
@@ -143,20 +147,39 @@ export default function AdminDashboard() {
     setMsg('');
 
     try {
-      // Validate corners if geoEnabled
-      const validCorners = corners.filter((c) => c.lat && c.lng);
-
-      const payload = {
+      let payload = {
         subject_name: subjectName.trim(),
         subject_code: subjectCode.trim(),
         hour_number: parseInt(hourNumber, 10),
-        geo_fence_enabled: geoEnabled,
-        geo_corners: validCorners.length >= 3 ? validCorners : null,
-        geo_lat: validCorners.length > 0 ? validCorners[0].lat : null,
-        geo_lng: validCorners.length > 0 ? validCorners[0].lng : null,
-        geo_radius_m: 100,
+        geo_fence_enabled: geoEnabled ? 1 : 0,
         pin_required: pinRequired
       };
+
+      if (geoEnabled) {
+        if (useCustomLocation) {
+          payload.geo_lat = customLat;
+          payload.geo_lng = customLng;
+          payload.geo_radius_m = customRadius;
+
+          // Save custom location as a new preset if selected
+          if (saveCustomAsPreset && customPresetName.trim()) {
+            await axios.post(
+              '/api/admin/saved-locations',
+              {
+                name: customPresetName.trim(),
+                type: customGeoType,
+                geo_lat: customLat,
+                geo_lng: customLng,
+                geo_radius_m: customRadius
+              },
+              axiosConfig
+            );
+            fetchSavedLocations();
+          }
+        } else {
+          payload.saved_location_id = parseInt(selectedSavedLocId, 10);
+        }
+      }
 
       await axios.post('/api/admin/sessions/start', payload, axiosConfig);
       setMsg(`Session started: ${subjectName} (Hour ${hourNumber})`);
@@ -211,39 +234,87 @@ export default function AdminDashboard() {
     }
   };
 
-  // Open 4-corner modal / editor for an active session
-  const handleOpenCornerEditor = (session) => {
-    setEditingCornersSessionId(session.id);
-    if (session.geo_corners) {
-      try {
-        const parsed = typeof session.geo_corners === 'string' ? JSON.parse(session.geo_corners) : session.geo_corners;
-        if (Array.isArray(parsed) && parsed.length >= 4) {
-          setActiveSessionCorners(parsed);
-          return;
-        }
-      } catch {}
+  // Open Geofence Editor for an active session with 3 options:
+  // 1. Saved locations, 2. Interactive Map, 3. Current GPS Location
+  const handleOpenGeofenceEditor = (session) => {
+    setEditingGeofenceSession(session);
+    setGeofenceEditTab('saved');
+    if (savedLocations.length > 0) {
+      setEditSavedLocId(String(savedLocations[0].id));
     }
-    setActiveSessionCorners([
-      { name: 'Corner 1 (NW)', lat: session.geo_lat || '', lng: session.geo_lng || '' },
-      { name: 'Corner 2 (NE)', lat: '', lng: '' },
-      { name: 'Corner 3 (SE)', lat: '', lng: '' },
-      { name: 'Corner 4 (SW)', lat: '', lng: '' }
-    ]);
+    setEditMapLat(session.geo_lat || 12.985300);
+    setEditMapLng(session.geo_lng || 77.762465);
+    setEditMapRadius(session.geo_radius_m || 100);
+    setEditMapType(session.geo_corners ? 'polygon' : 'circle');
+    setEditGpsLat(null);
+    setEditGpsLng(null);
+    setEditGpsRadius(session.geo_radius_m || 100);
+    setSaveEditAsPreset(false);
+    setEditPresetName('');
+    setGpsError('');
   };
 
-  // Save 4-corner polygon to active session
-  const handleSaveActiveCorners = async () => {
-    if (!editingCornersSessionId) return;
+  // Save Geofence changes to active session
+  const handleSaveActiveGeofence = async () => {
+    if (!editingGeofenceSession) return;
     try {
-      await axios.patch(`/api/admin/sessions/${editingCornersSessionId}/geofence`, {
-        enabled: true,
-        corners: activeSessionCorners
-      }, axiosConfig);
-      setEditingCornersSessionId(null);
+      let payload = { enabled: true };
+
+      if (geofenceEditTab === 'saved') {
+        payload.saved_location_id = parseInt(editSavedLocId, 10);
+      } else if (geofenceEditTab === 'map') {
+        payload.lat = editMapLat;
+        payload.lng = editMapLng;
+        payload.radius = editMapRadius;
+        if (editMapType === 'polygon' && editingGeofenceSession.geo_corners) {
+          payload.corners = editingGeofenceSession.geo_corners;
+        }
+
+        if (saveEditAsPreset && editPresetName.trim()) {
+          await axios.post(
+            '/api/admin/saved-locations',
+            {
+              name: editPresetName.trim(),
+              type: editMapType,
+              geo_lat: editMapLat,
+              geo_lng: editMapLng,
+              geo_radius_m: editMapRadius
+            },
+            axiosConfig
+          );
+          fetchSavedLocations();
+        }
+      } else if (geofenceEditTab === 'gps') {
+        if (!editGpsLat || !editGpsLng) {
+          alert('Please click "Capture My Current GPS" first to acquire coordinates.');
+          return;
+        }
+        payload.lat = editGpsLat;
+        payload.lng = editGpsLng;
+        payload.radius = editGpsRadius;
+
+        if (saveEditAsPreset && editPresetName.trim()) {
+          await axios.post(
+            '/api/admin/saved-locations',
+            {
+              name: editPresetName.trim(),
+              type: 'circle',
+              geo_lat: editGpsLat,
+              geo_lng: editGpsLng,
+              geo_radius_m: editGpsRadius
+            },
+            axiosConfig
+          );
+          fetchSavedLocations();
+        }
+      }
+
+      await axios.patch(`/api/admin/sessions/${editingGeofenceSession.id}/geofence`, payload, axiosConfig);
+      setEditingGeofenceSession(null);
       fetchStatsAndSessions();
-      alert('Auditorium 4-corner coordinates updated successfully!');
+      alert('Geofence updated successfully!');
     } catch (err) {
-      alert('Failed to update coordinates: ' + (err.response?.data?.error || err.message));
+      alert('Failed to update geofence: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -519,19 +590,19 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Geofence Corner Coordinates Management Button */}
-                    <div className="flex items-center justify-between pt-2 text-xs">
+                    {/* Geofence Configuration & Edit Button */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs">
                       <button
                         type="button"
-                        onClick={() => handleOpenCornerEditor(session)}
-                        className="inline-flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-medium underline"
+                        onClick={() => handleOpenGeofenceEditor(session)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 font-medium text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 transition"
                       >
-                        <Layers className="h-3.5 w-3.5" />
-                        <span>Manage 4-Corner Polygon Coordinates for this Auditorium</span>
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span>Configure / Edit Geofence (Presets, Map, or GPS)</span>
                       </button>
 
                       <span className="text-[11px] text-[#706860]">
-                        If students inside report GPS issues, click "DISABLED" above and ask them to refresh!
+                        {session.geo_fence_enabled ? 'Geofence active' : 'Geofence bypassed'} • If students report issues, toggle above
                       </span>
                     </div>
                   </div>
@@ -541,90 +612,289 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* Modal: Edit 4 Corners for Active Session */}
-        {editingCornersSessionId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="w-full max-w-xl rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl space-y-5">
+        {/* Modal: Edit Geofence for Active Session (3 Options) */}
+        {editingGeofenceSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="w-full max-w-2xl rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl space-y-6 my-8">
               <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-4">
                 <div>
                   <h3 className="font-serif text-xl font-normal text-[#f5f0ea]">
-                    Auditorium 4-Corner Coordinates
+                    Configure Geofence for Active Session
                   </h3>
-                  <p className="text-xs text-[#a39b94]">
-                    Define the 4 boundary vertices of the auditorium / venue
+                  <p className="text-xs text-[#a39b94] mt-0.5">
+                    {editingGeofenceSession.subject_name} {editingGeofenceSession.subject_code ? `(${editingGeofenceSession.subject_code})` : ''} • Hour {editingGeofenceSession.hour_number}
                   </p>
                 </div>
                 <button
-                  onClick={() => setEditingCornersSessionId(null)}
-                  className="rounded-full p-1 text-[#a39b94] hover:text-[#f5f0ea]"
+                  onClick={() => setEditingGeofenceSession(null)}
+                  className="rounded-full p-1.5 text-[#a39b94] hover:bg-[#1f1b17] hover:text-[#f5f0ea] transition"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="space-y-3">
-                {activeSessionCorners.map((corner, idx) => (
-                  <div key={idx} className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-amber-400">{corner.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCaptureGpsForActiveCorner(idx)}
-                        className="inline-flex items-center gap-1 rounded-full border border-[rgba(255,235,215,0.12)] bg-[#120f0d] px-2.5 py-1 text-[11px] text-[#f5f0ea] hover:border-amber-500"
-                      >
-                        <Navigation className="h-3 w-3 text-amber-400" />
-                        <span>Use My GPS</span>
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        placeholder="Latitude (e.g. 12.985640)"
-                        value={corner.lat}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setActiveSessionCorners((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], lat: val };
-                            return next;
-                          });
-                        }}
-                        className="rounded-lg border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3 py-1.5 text-xs font-mono text-[#f5f0ea]"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Longitude (e.g. 77.760120)"
-                        value={corner.lng}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setActiveSessionCorners((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], lng: val };
-                            return next;
-                          });
-                        }}
-                        className="rounded-lg border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3 py-1.5 text-xs font-mono text-[#f5f0ea]"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
+              {/* 3 Tab Switchers */}
+              <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-[#181512] border border-[rgba(255,235,215,0.08)]">
                 <button
                   type="button"
-                  onClick={() => setEditingCornersSessionId(null)}
-                  className="rounded-full border border-[rgba(255,235,215,0.1)] px-4 py-2 text-xs font-medium text-[#a39b94] hover:bg-[#181512]"
+                  onClick={() => setGeofenceEditTab('saved')}
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                    geofenceEditTab === 'saved'
+                      ? 'bg-amber-500 text-[#080605] shadow-sm'
+                      : 'text-[#a39b94] hover:text-[#f5f0ea]'
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>1. Saved Locations</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGeofenceEditTab('map')}
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                    geofenceEditTab === 'map'
+                      ? 'bg-amber-500 text-[#080605] shadow-sm'
+                      : 'text-[#a39b94] hover:text-[#f5f0ea]'
+                  }`}
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>2. Pick on Map</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGeofenceEditTab('gps')}
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                    geofenceEditTab === 'gps'
+                      ? 'bg-amber-500 text-[#080605] shadow-sm'
+                      : 'text-[#a39b94] hover:text-[#f5f0ea]'
+                  }`}
+                >
+                  <Navigation className="h-3.5 w-3.5" />
+                  <span>3. Use Current GPS</span>
+                </button>
+              </div>
+
+              {/* Tab 1: Saved Locations */}
+              {geofenceEditTab === 'saved' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-[#a39b94]">
+                    Select any pre-configured college venue or auditorium preset:
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {savedLocations.map((loc) => {
+                      const isSelected = String(loc.id) === String(editSavedLocId);
+                      return (
+                        <div
+                          key={loc.id}
+                          onClick={() => setEditSavedLocId(String(loc.id))}
+                          className={`cursor-pointer rounded-xl border p-3.5 transition flex items-center justify-between ${
+                            isSelected
+                              ? 'border-amber-500 bg-amber-500/10'
+                              : 'border-[rgba(255,235,215,0.08)] bg-[#181512] hover:border-[rgba(255,235,215,0.18)]'
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-[#f5f0ea]">{loc.name}</span>
+                              <span className="rounded-full bg-[#201c18] border border-[rgba(255,235,215,0.1)] px-2 py-0.5 text-[10px] uppercase font-semibold text-amber-400">
+                                {loc.type || 'circle'}
+                              </span>
+                              {loc.is_default ? (
+                                <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-2 py-0.5 text-[10px] font-semibold">
+                                  Default
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-[11px] font-mono text-[#a39b94]">
+                              {loc.geo_lat}, {loc.geo_lng} • Radius: {loc.geo_radius_m || 100}m
+                            </p>
+                          </div>
+                          <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                            isSelected ? 'border-amber-500 bg-amber-500' : 'border-[rgba(255,235,215,0.2)]'
+                          }`}>
+                            {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-[#080605]" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 2: Interactive Map */}
+              {geofenceEditTab === 'map' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[#a39b94]">Click or drag pin to choose center location:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditMapType('circle')}
+                        className={`px-2.5 py-1 text-xs rounded-lg border font-semibold ${
+                          editMapType === 'circle'
+                            ? 'bg-amber-500 text-[#080605] border-amber-500'
+                            : 'border-[rgba(255,235,215,0.1)] text-[#a39b94]'
+                        }`}
+                      >
+                        Circle Radius
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditMapType('polygon')}
+                        className={`px-2.5 py-1 text-xs rounded-lg border font-semibold ${
+                          editMapType === 'polygon'
+                            ? 'bg-amber-500 text-[#080605] border-amber-500'
+                            : 'border-[rgba(255,235,215,0.1)] text-[#a39b94]'
+                        }`}
+                      >
+                        Campus Polygon
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-64 rounded-xl overflow-hidden border border-[rgba(255,235,215,0.12)]">
+                    <VenueMapPicker
+                      initialLat={editMapLat}
+                      initialLng={editMapLng}
+                      initialRadius={editMapRadius}
+                      mode={editMapType}
+                      onLocationChange={(coords) => {
+                        setEditMapLat(coords.lat);
+                        setEditMapLng(coords.lng);
+                        if (coords.radius) setEditMapRadius(coords.radius);
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#a39b94]">Geofence Radius:</span>
+                      <span className="font-mono text-amber-400 font-bold">{editMapRadius} meters</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="25"
+                      max="500"
+                      step="5"
+                      value={editMapRadius}
+                      onChange={(e) => setEditMapRadius(parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea]">
+                      <input
+                        type="checkbox"
+                        checked={saveEditAsPreset}
+                        onChange={(e) => setSaveEditAsPreset(e.target.checked)}
+                        className="rounded accent-amber-500"
+                      />
+                      <span>Save this location as a new preset</span>
+                    </label>
+                    {saveEditAsPreset && (
+                      <input
+                        type="text"
+                        placeholder="Preset Name (e.g. MVJCE Mechanical Workshop)"
+                        value={editPresetName}
+                        onChange={(e) => setEditPresetName(e.target.value)}
+                        className="w-full rounded-lg border border-[rgba(255,235,215,0.12)] bg-[#120f0d] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Current GPS Location */}
+              {geofenceEditTab === 'gps' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-[#a39b94]">
+                    Set the geofence to the exact physical coordinates where you are currently standing:
+                  </p>
+
+                  <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4 text-center space-y-3">
+                    <button
+                      type="button"
+                      disabled={isCapturingGps}
+                      onClick={handleCaptureCurrentGps}
+                      className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50"
+                    >
+                      <Navigation className={`h-4 w-4 ${isCapturingGps ? 'animate-spin' : ''}`} />
+                      <span>{isCapturingGps ? 'Acquiring GPS...' : 'Capture My Current GPS'}</span>
+                    </button>
+
+                    {editGpsLat && editGpsLng ? (
+                      <div className="rounded-lg bg-[#120f0d] p-3 text-xs font-mono text-emerald-400 border border-emerald-500/20">
+                        Latitude: <span className="text-[#f5f0ea]">{editGpsLat}</span> | Longitude: <span className="text-[#f5f0ea]">{editGpsLng}</span>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-[#706860]">
+                        Click the button above to acquire high-accuracy GPS coordinates
+                      </p>
+                    )}
+
+                    {gpsError && (
+                      <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20">
+                        {gpsError}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#a39b94]">Geofence Radius:</span>
+                      <span className="font-mono text-amber-400 font-bold">{editGpsRadius} meters</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="25"
+                      max="500"
+                      step="5"
+                      value={editGpsRadius}
+                      onChange={(e) => setEditGpsRadius(parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea]">
+                      <input
+                        type="checkbox"
+                        checked={saveEditAsPreset}
+                        onChange={(e) => setSaveEditAsPreset(e.target.checked)}
+                        className="rounded accent-amber-500"
+                      />
+                      <span>Save this location as a new preset</span>
+                    </label>
+                    {saveEditAsPreset && (
+                      <input
+                        type="text"
+                        placeholder="Preset Name (e.g. My Current Classroom)"
+                        value={editPresetName}
+                        onChange={(e) => setEditPresetName(e.target.value)}
+                        className="w-full rounded-lg border border-[rgba(255,235,215,0.12)] bg-[#120f0d] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[rgba(255,235,215,0.08)]">
+                <button
+                  type="button"
+                  onClick={() => setEditingGeofenceSession(null)}
+                  className="rounded-full border border-[rgba(255,235,215,0.1)] px-5 py-2 text-xs font-medium text-[#a39b94] hover:bg-[#181512]"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleSaveActiveCorners}
-                  className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow"
+                  onClick={handleSaveActiveGeofence}
+                  className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95"
                 >
-                  Save Coordinates
+                  Apply to Active Session
                 </button>
               </div>
             </div>
@@ -713,7 +983,7 @@ export default function AdminDashboard() {
                   />
                   <div>
                     <span className="text-xs font-semibold text-[#f5f0ea]">Enable GPS Geofence</span>
-                    <p className="text-[11px] text-[#706860]">Validate coordinates against 4 auditorium corners</p>
+                    <p className="text-[11px] text-[#706860]">Validate coordinates against chosen venue preset or map</p>
                   </div>
                 </label>
 
@@ -732,59 +1002,149 @@ export default function AdminDashboard() {
                 </label>
               </div>
 
-              {/* Optional 4-Corner Inputs in New Session Form */}
+              {/* Geofence Location Selection for New Session */}
               {geoEnabled && (
-                <div className="rounded-xl border border-[rgba(240,150,80,0.2)] bg-[#18130e] p-4 space-y-3">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-amber-400 block">
-                    Auditorium 4 Corners (GPS Coordinates)
-                  </span>
+                <div className="rounded-xl border border-[rgba(240,150,80,0.25)] bg-[#18130e] p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[rgba(255,235,215,0.06)] pb-3">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-400 block">
+                        Venue Geofence Location
+                      </span>
+                      <p className="text-[11px] text-[#a39b94]">
+                        Select from 4-5 saved college presets or specify a custom map boundary
+                      </p>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {corners.map((c, i) => (
-                      <div key={i} className="rounded-lg border border-[rgba(255,235,215,0.06)] bg-[#120f0d] p-2.5">
-                        <div className="flex justify-between items-center text-[11px] mb-1.5">
-                          <span className="text-[#a39b94] font-medium">{c.name}</span>
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea] self-start sm:self-auto bg-[#120f0d] px-3 py-1.5 rounded-lg border border-[rgba(255,235,215,0.1)]">
+                      <input
+                        type="checkbox"
+                        checked={useCustomLocation}
+                        onChange={(e) => setUseCustomLocation(e.target.checked)}
+                        className="rounded accent-amber-500"
+                      />
+                      <span>Custom Map / GPS</span>
+                    </label>
+                  </div>
+
+                  {!useCustomLocation ? (
+                    <div className="space-y-3">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                        Select Saved Location Preset
+                      </label>
+                      <select
+                        value={selectedSavedLocId}
+                        onChange={(e) => setSelectedSavedLocId(e.target.value)}
+                        className="w-full rounded-xl border border-[rgba(255,235,215,0.15)] bg-[#120f0d] px-4 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                      >
+                        {savedLocations.map((loc) => (
+                          <option key={loc.id} value={loc.id} className="bg-[#120f0d] text-[#f5f0ea]">
+                            {loc.name} ({loc.type === 'polygon' ? 'Polygon' : 'Circle'} • {loc.geo_radius_m || 100}m) {loc.is_default ? '★ Default' : ''}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Details of chosen preset */}
+                      {(() => {
+                        const sel = savedLocations.find((l) => String(l.id) === String(selectedSavedLocId));
+                        if (!sel) return null;
+                        return (
+                          <div className="rounded-lg bg-[#120f0d] p-3 text-[11px] text-[#a39b94] border border-[rgba(255,235,215,0.06)] flex items-center justify-between">
+                            <div>
+                              <span className="text-[#f5f0ea] font-medium">{sel.name}</span>
+                              <p className="font-mono mt-0.5 text-[#88817a]">
+                                Lat: {sel.geo_lat}, Lng: {sel.geo_lng}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-amber-400 font-bold">{sel.geo_radius_m || 100} meters</span>
+                              <p className="text-[10px] uppercase font-semibold text-[#88817a]">{sel.type || 'circle'}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[#a39b94]">Set custom boundary on map:</span>
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => handleCaptureGpsForCorner(i)}
-                            className="text-amber-400 hover:underline text-[10px]"
+                            onClick={() => setCustomGeoType('circle')}
+                            className={`px-2.5 py-1 text-xs rounded-lg border font-semibold ${
+                              customGeoType === 'circle'
+                                ? 'bg-amber-500 text-[#080605] border-amber-500'
+                                : 'border-[rgba(255,235,215,0.1)] text-[#a39b94]'
+                            }`}
                           >
-                            Set to Current GPS
+                            Circle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomGeoType('polygon')}
+                            className={`px-2.5 py-1 text-xs rounded-lg border font-semibold ${
+                              customGeoType === 'polygon'
+                                ? 'bg-amber-500 text-[#080605] border-amber-500'
+                                : 'border-[rgba(255,235,215,0.1)] text-[#a39b94]'
+                            }`}
+                          >
+                            Polygon
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <input
-                            type="text"
-                            placeholder="Lat"
-                            value={c.lat}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setCorners((prev) => {
-                                const next = [...prev];
-                                next[i] = { ...next[i], lat: v };
-                                return next;
-                              });
-                            }}
-                            className="rounded border border-[rgba(255,235,215,0.08)] bg-[#181512] px-2 py-1 text-[11px] font-mono text-[#f5f0ea]"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Lng"
-                            value={c.lng}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setCorners((prev) => {
-                                const next = [...prev];
-                                next[i] = { ...next[i], lng: v };
-                                return next;
-                              });
-                            }}
-                            className="rounded border border-[rgba(255,235,215,0.08)] bg-[#181512] px-2 py-1 text-[11px] font-mono text-[#f5f0ea]"
-                          />
-                        </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="h-56 rounded-xl overflow-hidden border border-[rgba(255,235,215,0.1)]">
+                        <VenueMapPicker
+                          initialLat={customLat}
+                          initialLng={customLng}
+                          initialRadius={customRadius}
+                          mode={customGeoType}
+                          onLocationChange={(coords) => {
+                            setCustomLat(coords.lat);
+                            setCustomLng(coords.lng);
+                            if (coords.radius) setCustomRadius(coords.radius);
+                          }}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[#a39b94]">Geofence Radius:</span>
+                          <span className="font-mono text-amber-400 font-bold">{customRadius} meters</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="25"
+                          max="500"
+                          step="5"
+                          value={customRadius}
+                          onChange={(e) => setCustomRadius(parseInt(e.target.value, 10))}
+                          className="w-full accent-amber-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-3 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs text-[#f5f0ea]">
+                          <input
+                            type="checkbox"
+                            checked={saveCustomAsPreset}
+                            onChange={(e) => setSaveCustomAsPreset(e.target.checked)}
+                            className="rounded accent-amber-500"
+                          />
+                          <span>Save this location as a new preset</span>
+                        </label>
+                        {saveCustomAsPreset && (
+                          <input
+                            type="text"
+                            placeholder="Preset Name (e.g. MVJCE Seminar Hall 3)"
+                            value={customPresetName}
+                            onChange={(e) => setCustomPresetName(e.target.value)}
+                            className="w-full rounded-lg border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -9,22 +9,39 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png'
 });
 
-export default function VenueMapPicker({ lat, lng, radius, onLocationChange, height = '350px' }) {
+export default function VenueMapPicker({ 
+  lat, 
+  lng, 
+  radius, 
+  initialLat = 12.985300,
+  initialLng = 77.762465,
+  initialRadius = 100,
+  mode = 'circle', // 'circle' | 'polygon'
+  corners = null,
+  onLocationChange,
+  onCornersChange,
+  height = '320px' 
+}) {
+  const effectiveLat = lat !== undefined ? lat : initialLat;
+  const effectiveLng = lng !== undefined ? lng : initialLng;
+  const effectiveRadius = radius !== undefined ? radius : initialRadius;
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const circleRef = useRef(null);
+  const polygonRef = useRef(null);
+  const cornerMarkersRef = useRef([]);
 
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    const initialLat = parseFloat(lat) || 12.983020;
-    const initialLng = parseFloat(lng) || 77.759970;
-    const initialRadius = parseInt(radius, 10) || 100;
+    const startLat = parseFloat(effectiveLat) || 12.985300;
+    const startLng = parseFloat(effectiveLng) || 77.762465;
+    const startRadius = parseInt(effectiveRadius, 10) || 100;
 
     const map = L.map(mapContainerRef.current, {
-      center: [initialLat, initialLng],
+      center: [startLat, startLng],
       zoom: 17,
       scrollWheelZoom: true
     });
@@ -37,31 +54,39 @@ export default function VenueMapPicker({ lat, lng, radius, onLocationChange, hei
     }).addTo(map);
 
     // Amber Circle for Geofence
-    const circle = L.circle([initialLat, initialLng], {
-      radius: initialRadius,
+    const circle = L.circle([startLat, startLng], {
+      radius: startRadius,
       color: '#f09650',
       weight: 2,
       fillColor: '#f09650',
       fillOpacity: 0.2
-    }).addTo(map);
+    });
     circleRef.current = circle;
 
     // Draggable Center Marker
-    const marker = L.marker([initialLat, initialLng], {
+    const marker = L.marker([startLat, startLng], {
       draggable: true
-    }).addTo(map);
+    });
     markerRef.current = marker;
 
-    // Click on map to reposition center
+    if (mode === 'circle') {
+      circle.addTo(map);
+      marker.addTo(map);
+    }
+
+    // Click on map to reposition center in circle mode
     map.on('click', (e) => {
       const { lat: newLat, lng: newLng } = e.latlng;
-      marker.setLatLng([newLat, newLng]);
-      circle.setLatLng([newLat, newLng]);
-      if (onLocationChange) {
-        onLocationChange({
-          lat: parseFloat(newLat.toFixed(6)),
-          lng: parseFloat(newLng.toFixed(6))
-        });
+      if (mode === 'circle') {
+        marker.setLatLng([newLat, newLng]);
+        circle.setLatLng([newLat, newLng]);
+        if (onLocationChange) {
+          onLocationChange({
+            lat: parseFloat(newLat.toFixed(6)),
+            lng: parseFloat(newLng.toFixed(6)),
+            radius: parseInt(radius, 10) || 100
+          });
+        }
       }
     });
 
@@ -72,12 +97,12 @@ export default function VenueMapPicker({ lat, lng, radius, onLocationChange, hei
       if (onLocationChange) {
         onLocationChange({
           lat: parseFloat(pos.lat.toFixed(6)),
-          lng: parseFloat(pos.lng.toFixed(6))
+          lng: parseFloat(pos.lng.toFixed(6)),
+          radius: parseInt(radius, 10) || 100
         });
       }
     });
 
-    // Invalidate size in case of flex/modal layout
     setTimeout(() => {
       map.invalidateSize();
     }, 200);
@@ -88,27 +113,64 @@ export default function VenueMapPicker({ lat, lng, radius, onLocationChange, hei
     };
   }, []);
 
-  // Update map when lat, lng, or radius prop changes
+  // Update mode, circle or polygon
   useEffect(() => {
-    const validLat = parseFloat(lat);
-    const validLng = parseFloat(lng);
-    const validRadius = parseInt(radius, 10) || 100;
+    if (!mapRef.current) return;
+    const map = mapRef.current;
 
-    if (isNaN(validLat) || isNaN(validLng)) return;
-
-    if (mapRef.current && markerRef.current && circleRef.current) {
-      markerRef.current.setLatLng([validLat, validLng]);
-      circleRef.current.setLatLng([validLat, validLng]);
-      circleRef.current.setRadius(validRadius);
-      mapRef.current.panTo([validLat, validLng]);
+    // Clear previous polygon
+    if (polygonRef.current) {
+      map.removeLayer(polygonRef.current);
+      polygonRef.current = null;
     }
-  }, [lat, lng, radius]);
+    cornerMarkersRef.current.forEach((m) => map.removeLayer(m));
+    cornerMarkersRef.current = [];
+
+    if (mode === 'circle') {
+      if (circleRef.current && !map.hasLayer(circleRef.current)) circleRef.current.addTo(map);
+      if (markerRef.current && !map.hasLayer(markerRef.current)) markerRef.current.addTo(map);
+
+      const validLat = parseFloat(effectiveLat) || 12.985300;
+      const validLng = parseFloat(effectiveLng) || 77.762465;
+      const validRadius = parseInt(effectiveRadius, 10) || 100;
+
+      markerRef.current?.setLatLng([validLat, validLng]);
+      circleRef.current?.setLatLng([validLat, validLng]);
+      circleRef.current?.setRadius(validRadius);
+      map.panTo([validLat, validLng]);
+    } else {
+      // Polygon mode
+      if (circleRef.current && map.hasLayer(circleRef.current)) map.removeLayer(circleRef.current);
+      if (markerRef.current && map.hasLayer(markerRef.current)) map.removeLayer(markerRef.current);
+
+      let polyCorners = corners;
+      if (typeof polyCorners === 'string') {
+        try { polyCorners = JSON.parse(polyCorners); } catch {}
+      }
+
+      if (Array.isArray(polyCorners) && polyCorners.length >= 3) {
+        const latLngs = polyCorners.map((c) => [parseFloat(c.lat), parseFloat(c.lng)]);
+        const poly = L.polygon(latLngs, {
+          color: '#f09650',
+          weight: 2,
+          fillColor: '#f09650',
+          fillOpacity: 0.25
+        }).addTo(map);
+        polygonRef.current = poly;
+
+        // Fit map bounds to polygon
+        map.fitBounds(poly.getBounds(), { padding: [20, 20] });
+      }
+    }
+  }, [mode, effectiveLat, effectiveLng, effectiveRadius, corners]);
 
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-[rgba(255,235,215,0.12)] shadow-xl">
       <div ref={mapContainerRef} style={{ height, width: '100%', zIndex: 10 }} />
-      <div className="absolute bottom-2 left-2 z-20 rounded-lg bg-[#080605]/80 px-2.5 py-1 text-[11px] text-[#a39b94] backdrop-blur-md border border-[rgba(255,235,215,0.1)]">
-        📍 Click map or drag pin to adjust auditorium geofence center
+      <div className="absolute bottom-2 left-2 z-20 rounded-lg bg-[#080605]/85 px-2.5 py-1 text-[11px] text-[#a39b94] backdrop-blur-md border border-[rgba(255,235,215,0.1)]">
+        {mode === 'circle' 
+          ? '📍 Click or drag pin to adjust center & boundary circle' 
+          : '📐 Polygon geofence boundary active'}
       </div>
     </div>
   );

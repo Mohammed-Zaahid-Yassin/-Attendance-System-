@@ -75,8 +75,8 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS venue_configs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       venue_name TEXT NOT NULL DEFAULT 'MVJCE Central Auditorium',
-      geo_lat REAL NOT NULL DEFAULT 12.9830,
-      geo_lng REAL NOT NULL DEFAULT 77.7600,
+      geo_lat REAL NOT NULL DEFAULT 12.985300,
+      geo_lng REAL NOT NULL DEFAULT 77.762465,
       geo_radius_m INTEGER NOT NULL DEFAULT 100,
       geo_corners TEXT,
       mappls_api_key TEXT,
@@ -84,14 +84,59 @@ function initDb() {
     );
   `);
 
-  // Seed default venue if none exists
-  const existingVenue = db.prepare('SELECT id FROM venue_configs LIMIT 1').get();
+  // Seed or update default venue to accurate MVJCE campus coordinates
+  const existingVenue = db.prepare('SELECT id, geo_lat FROM venue_configs LIMIT 1').get();
   if (!existingVenue) {
     db.prepare(`
       INSERT INTO venue_configs (venue_name, geo_lat, geo_lng, geo_radius_m)
       VALUES (?, ?, ?, ?)
-    `).run('MVJCE Central Auditorium', 12.983020, 77.759970, 100);
+    `).run('MVJCE Central Auditorium', 12.985300, 77.762465, 100);
     console.log('[DB] Default venue configuration initialized: MVJCE Central Auditorium');
+  } else if (existingVenue.geo_lat < 12.9840) {
+    // Update legacy inaccurate coordinates to real MVJCE campus coordinates
+    db.prepare(`
+      UPDATE venue_configs 
+      SET geo_lat = 12.985300, geo_lng = 77.762465, geo_radius_m = 100, venue_name = 'MVJCE Central Auditorium'
+      WHERE id = ?
+    `).run(existingVenue.id);
+  }
+
+  // Saved Locations Table (4-5 predefined or custom locations admin can choose from)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT DEFAULT 'circle',
+      geo_lat REAL,
+      geo_lng REAL,
+      geo_radius_m INTEGER DEFAULT 100,
+      geo_corners TEXT,
+      is_default INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed 5 accurate MVJ College of Engineering locations if none exist
+  const existingLocationsCount = db.prepare('SELECT COUNT(*) as count FROM saved_locations').get().count;
+  if (existingLocationsCount === 0) {
+    const campusPolygon = JSON.stringify([
+      { name: 'NW Corner', lat: 12.986200, lng: 77.761800 },
+      { name: 'NE Corner', lat: 12.986200, lng: 77.763400 },
+      { name: 'SE Corner', lat: 12.984400, lng: 77.763400 },
+      { name: 'SW Corner', lat: 12.984400, lng: 77.761800 }
+    ]);
+
+    const seedStmt = db.prepare(`
+      INSERT INTO saved_locations (name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    seedStmt.run('MVJCE Central Auditorium', 'circle', 12.985300, 77.762465, 100, null, 1);
+    seedStmt.run('MVJCE Seminar Hall 1 (Admin Block)', 'circle', 12.985100, 77.762200, 65, null, 0);
+    seedStmt.run('MVJCE Main Academic Block', 'circle', 12.985450, 77.762600, 120, null, 0);
+    seedStmt.run('MVJCE CSE & IT Department Labs', 'circle', 12.985600, 77.762300, 80, null, 0);
+    seedStmt.run('MVJCE Campus Boundary (Polygon)', 'polygon', 12.985300, 77.762465, 250, campusPolygon, 0);
+    console.log('[DB] Initialized 5 accurate MVJCE saved locations');
   }
 
 
