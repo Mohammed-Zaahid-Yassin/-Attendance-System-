@@ -201,6 +201,16 @@ export default function AdminDashboard() {
     }
   };
 
+  // Toggle 3: On-the-fly Static QR Mode Toggle
+  const handleToggleStaticQr = async (session) => {
+    try {
+      await axios.patch(`/api/admin/sessions/${session.id}/toggle-static-qr`, {}, axiosConfig);
+      fetchStatsAndSessions();
+    } catch (err) {
+      alert('Error toggling static QR mode: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
   // Open 4-corner modal / editor for an active session
   const handleOpenCornerEditor = (session) => {
     setEditingCornersSessionId(session.id);
@@ -354,6 +364,7 @@ export default function AdminDashboard() {
               {activeSessions.map((session) => {
                 const isGeoOn = session.geo_fence_enabled === 1;
                 const isPinOn = session.pin_required !== 0;
+                const isStaticQr = session.static_qr_mode === 1;
 
                 return (
                   <div
@@ -408,15 +419,15 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* On-The-Fly Emergency Toggles (As requested by user!) */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-[rgba(255,235,215,0.06)]">
+                    {/* On-The-Fly Emergency Toggles */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-[rgba(255,235,215,0.06)]">
                       {/* TOGGLE 1: GEOFENCE ON/OFF */}
                       <div className="flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
                             <MapPin className="h-4 w-4 text-amber-400" />
                             <span className="text-xs font-semibold uppercase tracking-wider text-[#f5f0ea]">
-                              Toggle 1: Auditorium Geofence
+                              Geofence
                             </span>
                           </div>
                           <p className="text-[11px] text-[#a39b94]">
@@ -436,7 +447,7 @@ export default function AdminDashboard() {
                                 : 'bg-[#201c18] border border-[rgba(255,235,215,0.15)] text-[#a39b94]'
                             }`}
                           >
-                            {isGeoOn ? 'ENABLED' : 'DISABLED'}
+                            {isGeoOn ? 'ON' : 'OFF'}
                           </button>
                         </div>
                       </div>
@@ -447,13 +458,13 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-2">
                             <KeyRound className="h-4 w-4 text-amber-400" />
                             <span className="text-xs font-semibold uppercase tracking-wider text-[#f5f0ea]">
-                              Toggle 2: Screen PIN Key
+                              Screen PIN
                             </span>
                           </div>
                           <p className="text-[11px] text-[#a39b94]">
                             {isPinOn
                               ? 'Active (6-digit screen PIN required)'
-                              : 'Bypassed (Students submit with QR only)'}
+                              : 'Bypassed (QR scan only)'}
                           </p>
                         </div>
 
@@ -467,7 +478,42 @@ export default function AdminDashboard() {
                                 : 'bg-[#201c18] border border-[rgba(255,235,215,0.15)] text-[#a39b94]'
                             }`}
                           >
-                            {isPinOn ? 'ENABLED' : 'BYPASSED'}
+                            {isPinOn ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* TOGGLE 3: STATIC QR MODE */}
+                      <div className={`flex items-center justify-between rounded-xl border p-4 ${
+                        isStaticQr
+                          ? 'border-emerald-500/30 bg-emerald-500/5'
+                          : 'border-[rgba(255,235,215,0.08)] bg-[#181512]'
+                      }`}>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <QrCode className={`h-4 w-4 ${isStaticQr ? 'text-emerald-400' : 'text-amber-400'}`} />
+                            <span className="text-xs font-semibold uppercase tracking-wider text-[#f5f0ea]">
+                              Static QR
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#a39b94]">
+                            {isStaticQr
+                              ? 'Frozen — QR not rotating on screen'
+                              : 'Dynamic — rotating every 20s'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStaticQr(session)}
+                            className={`min-h-[36px] rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+                              isStaticQr
+                                ? 'bg-emerald-500 text-[#080605]'
+                                : 'bg-[#201c18] border border-[rgba(255,235,215,0.15)] text-[#a39b94]'
+                            }`}
+                          >
+                            {isStaticQr ? 'FROZEN' : 'DYNAMIC'}
                           </button>
                         </div>
                       </div>

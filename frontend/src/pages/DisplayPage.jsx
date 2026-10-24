@@ -130,6 +130,7 @@ export default function DisplayPage() {
   }
 
   const isPinRequired = tokenData?.pin_required !== false;
+  const isStaticQr = currentSession?.static_qr_mode === 1;
 
   return (
     <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-8 select-none">
@@ -224,32 +225,47 @@ export default function DisplayPage() {
               </div>
             )}
 
-            {/* Rotation Countdown Bar (25s) */}
-            <div className="w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 shadow-xl">
-              <div className="flex items-center justify-between text-xs mb-3">
-                <span className="flex items-center gap-1.5 text-[#a39b94] uppercase tracking-wider text-[11px]">
-                  <Clock className="h-3.5 w-3.5 text-amber-400" />
-                  Next QR Rotation:
-                </span>
-                <span className="font-mono font-bold text-amber-400 text-sm">
-                  {secondsRemaining}s
-                </span>
+            {/* Rotation Countdown Bar — hidden in Static QR mode */}
+            {isStaticQr ? (
+              <div className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 shadow-xl text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400">
+                    Static QR – Frozen
+                  </span>
+                </div>
+                <p className="text-xs text-[#a39b94] leading-relaxed">
+                  QR rotation is paused. All students share the same code until the admin re-enables dynamic mode.
+                </p>
               </div>
+            ) : (
+              <div className="w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 shadow-xl">
+                <div className="flex items-center justify-between text-xs mb-3">
+                  <span className="flex items-center gap-1.5 text-[#a39b94] uppercase tracking-wider text-[11px]">
+                    <Clock className="h-3.5 w-3.5 text-amber-400" />
+                    Next QR Rotation:
+                  </span>
+                  <span className="font-mono font-bold text-amber-400 text-sm">
+                    {secondsRemaining}s
+                  </span>
+                </div>
 
-              {/* Progress track */}
-              <div className="h-2 w-full overflow-hidden rounded-full bg-[#181512]">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000 ease-linear shadow-amber-glow"
-                  style={{ width: `${progressPercent}%` }}
-                ></div>
+                {/* Progress track */}
+                <div className="h-2 w-full overflow-hidden rounded-full bg-[#181512]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000 ease-linear shadow-amber-glow"
+                    style={{ width: `${progressPercent}%` }}
+                  ></div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         {/* Student Instruction */}
         <p className="mt-8 text-center text-xs text-[#a39b94]">
-          Scan the QR code using your mobile camera {isPinRequired ? 'and enter the screen PIN ' : ''}to mark attendance.
+          Scan the QR code using your mobile camera{isPinRequired ? ' and enter the screen PIN ' : ' '}to mark attendance.
+          {isStaticQr && <span className="ml-1 text-emerald-400 font-medium">(Static Mode — QR is frozen)</span>}
         </p>
       </main>
 

@@ -215,6 +215,29 @@ router.patch('/sessions/:id/toggle-pin', (req, res) => {
   });
 });
 
+// 6d. On-the-fly Toggle 3: Enable / Disable Static QR Mode (freezes QR rotation on display screen)
+router.patch('/sessions/:id/toggle-static-qr', (req, res) => {
+  const sessionId = parseInt(req.params.id, 10);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const currentMode = session.static_qr_mode !== 0 ? 1 : 0;
+  const newMode = currentMode === 1 ? 0 : 1;
+  db.prepare('UPDATE sessions SET static_qr_mode = ? WHERE id = ?').run(newMode, sessionId);
+  const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+
+  return res.json({
+    success: true,
+    static_qr_mode: newMode === 1,
+    message: newMode === 1
+      ? 'Static QR mode enabled — display screen will show a frozen QR (no rotation)'
+      : 'Static QR mode disabled — display screen resumes rotating anti-proxy QR',
+    session: updated
+  });
+});
+
 // 7. Manual Attendance Override / Error Correction
 // Add attendance manually for a student who had a device/scan issue
 router.post('/attendance/manual-mark', (req, res) => {

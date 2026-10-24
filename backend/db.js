@@ -30,7 +30,7 @@ function initDb() {
     );
   `);
 
-  // Sessions Table (supports 5 subjects / hours, 4-corner polygon geofence, and PIN requirement toggle)
+  // Sessions Table (supports 5 subjects / hours, 4-corner polygon geofence, PIN requirement toggle, and static QR mode)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +46,8 @@ function initDb() {
       geo_lng REAL,
       geo_radius_m INTEGER DEFAULT 100,
       geo_corners TEXT,
-      pin_required INTEGER DEFAULT 1
+      pin_required INTEGER DEFAULT 1,
+      static_qr_mode INTEGER DEFAULT 0
     );
   `);
 
@@ -61,6 +62,9 @@ function initDb() {
     }
     if (!sessionCols.includes('pin_required')) {
       db.exec(`ALTER TABLE sessions ADD COLUMN pin_required INTEGER DEFAULT 1`);
+    }
+    if (!sessionCols.includes('static_qr_mode')) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN static_qr_mode INTEGER DEFAULT 0`);
     }
   } catch (migErr) {
     console.error('[DB Migration]', migErr);
