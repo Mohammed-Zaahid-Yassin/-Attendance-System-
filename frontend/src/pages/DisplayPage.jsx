@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, 
@@ -12,35 +13,51 @@ import {
 } from 'lucide-react';
 
 export default function DisplayPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sessionFromUrl = searchParams.get('session');
+
   const [activeSessions, setActiveSessions] = useState([]);
-  const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [selectedSessionId, setSelectedSessionId] = useState(
+    sessionFromUrl ? parseInt(sessionFromUrl, 10) : null
+  );
   const [tokenData, setTokenData] = useState(null);
   const [liveAttendanceCount, setLiveAttendanceCount] = useState(0);
-  const [secondsRemaining, setSecondsRemaining] = useState(25);
+  const [secondsRemaining, setSecondsRemaining] = useState(30);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 1. Fetch Active Sessions periodically
   useEffect(() => {
+    let isMounted = true;
     const fetchActiveSessions = async () => {
       try {
         const res = await axios.get('/api/sessions/active');
         const list = res.data.sessions || [];
+        if (!isMounted) return;
         setActiveSessions(list);
-        if (list.length > 0 && !selectedSessionId) {
-          setSelectedSessionId(list[0].id);
+        if (list.length > 0) {
+          // If URL param specified an active session, use it
+          if (sessionFromUrl && list.some(s => s.id === parseInt(sessionFromUrl, 10))) {
+            setSelectedSessionId(parseInt(sessionFromUrl, 10));
+          } else if (!selectedSessionId || !list.some(s => s.id === selectedSessionId)) {
+            setSelectedSessionId(list[0].id);
+            setSearchParams({ session: String(list[0].id) }, { replace: true });
+          }
         }
       } catch (err) {
         console.error('Failed to load active sessions', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchActiveSessions();
     const interval = setInterval(fetchActiveSessions, 5000);
-    return () => clearInterval(interval);
-  }, [selectedSessionId]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [sessionFromUrl]);
 
   // 2. Poll QR token and PIN for the selected session
   useEffect(() => {
@@ -161,7 +178,11 @@ export default function DisplayPage() {
           {activeSessions.length > 1 && (
             <select
               value={selectedSessionId || ''}
-              onChange={(e) => setSelectedSessionId(parseInt(e.target.value, 10))}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setSelectedSessionId(val);
+                setSearchParams({ session: String(val) });
+              }}
               aria-label="Select active classroom session"
               className="rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-1.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
             >
@@ -225,7 +246,7 @@ export default function DisplayPage() {
               </div>
             )}
 
-            {/* Rotation Countdown Bar — hidden in Static QR mode */}
+            {/* Disguised Rotation Progress Bar — hidden in Static QR mode */}
             {isStaticQr ? (
               <div className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 shadow-xl text-center">
                 <div className="flex items-center justify-center gap-2 mb-2">
@@ -241,20 +262,23 @@ export default function DisplayPage() {
             ) : (
               <div className="w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 shadow-xl">
                 <div className="flex items-center justify-between text-xs mb-3">
-                  <span className="flex items-center gap-1.5 text-[#a39b94] uppercase tracking-wider text-[11px]">
-                    <Clock className="h-3.5 w-3.5 text-amber-400" />
-                    Next QR Rotation:
+                  <span className="flex items-center gap-2 text-[#a39b94] uppercase tracking-wider text-[11px]">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    Rotating Anti-Proxy Shield:
                   </span>
-                  <span className="font-mono font-bold text-amber-400 text-sm">
-                    {secondsRemaining}s
+                  <span className="font-mono text-amber-400 text-xs font-semibold uppercase tracking-wider">
+                    Dynamic Token
                   </span>
                 </div>
 
-                {/* Progress track */}
+                {/* Disguised Progress track */}
                 <div className="h-2 w-full overflow-hidden rounded-full bg-[#181512]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000 ease-linear shadow-amber-glow"
-                    style={{ width: `${progressPercent}%` }}
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 transition-all duration-1000 ease-linear shadow-amber-glow"
+                    style={{ width: `${Math.max(8, Math.min(100, (secondsRemaining / 33) * 100))}%` }}
                   ></div>
                 </div>
               </div>

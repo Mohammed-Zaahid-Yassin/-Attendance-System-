@@ -58,10 +58,22 @@ router.post('/sessions/start', (req, res) => {
   const hour = parseInt(hour_number, 10) || 1;
   const isGeoEnabled = geo_fence_enabled ? 1 : 0;
   const isPinRequired = pin_required !== undefined ? (pin_required ? 1 : 0) : 1;
-  const lat = geo_lat ? parseFloat(geo_lat) : null;
-  const lng = geo_lng ? parseFloat(geo_lng) : null;
-  const radius = geo_radius_m ? parseInt(geo_radius_m, 10) : 100;
-  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+  let lat = geo_lat ? parseFloat(geo_lat) : null;
+  let lng = geo_lng ? parseFloat(geo_lng) : null;
+  let radius = geo_radius_m ? parseInt(geo_radius_m, 10) : 100;
+  let cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+
+  if (lat === null || lng === null) {
+    const defaultVenue = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
+    if (defaultVenue) {
+      lat = defaultVenue.geo_lat;
+      lng = defaultVenue.geo_lng;
+      radius = defaultVenue.geo_radius_m || 100;
+      if (!cornersJson && defaultVenue.geo_corners) {
+        cornersJson = defaultVenue.geo_corners;
+      }
+    }
+  }
 
   try {
     const insertStmt = db.prepare(`
@@ -354,6 +366,63 @@ router.post('/change-password', (req, res) => {
   db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, admin.id);
 
   return res.json({ success: true, message: 'Password changed successfully' });
+});
+
+// 10. Venue Config (Persistent Map-based auditorium/venue settings)
+router.get('/venue-config', (req, res) => {
+  let config = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
+  if (!config) {
+    config = {
+      venue_name: 'MVJCE Central Auditorium',
+      geo_lat: 12.983020,
+      geo_lng: 77.759970,
+      geo_radius_m: 100,
+      geo_corners: null,
+      mappls_api_key: ''
+    };
+  }
+  return res.json({ success: true, config });
+});
+
+router.post('/venue-config', (req, res) => {
+  const { venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, mappls_api_key } = req.body;
+  if (!geo_lat || !geo_lng) {
+    return res.status(400).json({ error: 'Latitude and Longitude are required' });
+  }
+
+  const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+
+  const existing = db.prepare('SELECT id FROM venue_configs ORDER BY id DESC LIMIT 1').get();
+  if (existing) {
+    db.prepare(`
+      UPDATE venue_configs 
+      SET venue_name = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, mappls_api_key = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      venue_name || 'MVJCE Central Auditorium',
+      parseFloat(geo_lat),
+      parseFloat(geo_lng),
+      parseInt(geo_radius_m, 10) || 100,
+      cornersJson,
+      mappls_api_key || '',
+      existing.id
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO venue_configs (venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, mappls_api_key)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      venue_name || 'MVJCE Central Auditorium',
+      parseFloat(geo_lat),
+      parseFloat(geo_lng),
+      parseInt(geo_radius_m, 10) || 100,
+      cornersJson,
+      mappls_api_key || ''
+    );
+  }
+
+  const updated = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
+  return res.json({ success: true, message: 'Venue configuration saved successfully', config: updated });
 });
 
 module.exports = router;

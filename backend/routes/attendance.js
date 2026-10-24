@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const QRCode = require('qrcode');
+const XLSX = require('xlsx');
 const db = require('../db');
 const { getCurrentToken } = require('../cron/tokenRotator');
 const { checkGeoFence } = require('../middleware/geoCheck');
 const adminAuth = require('../middleware/adminAuth');
+
 
 // 1. Get current rotating token and PIN for display screen
 router.get('/token/current/:sessionId', (req, res) => {
@@ -262,7 +264,7 @@ router.get('/attendance/live/:sessionId', (req, res) => {
   });
 });
 
-// 5. Export Attendance as CSV (pure SQLite, replacing exceljs)
+// 5. Export Attendance as CSV
 router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
   if (isNaN(sessionId)) {
@@ -274,7 +276,8 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  const records = db.prepare(`
+  const { department, year } = req.query;
+  let query = `
     SELECT 
       a.id,
       s.student_id,
@@ -289,8 +292,19 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
     FROM attendance a
     JOIN students s ON a.student_id = s.student_id
     WHERE a.session_id = ?
-    ORDER BY a.id ASC
-  `).all(sessionId);
+  `;
+  const params = [sessionId];
+  if (department && department !== 'ALL') {
+    query += ' AND s.department = ?';
+    params.push(department);
+  }
+  if (year && year !== 'ALL') {
+    query += ' AND s.year = ?';
+    params.push(parseInt(year, 10));
+  }
+  query += ' ORDER BY a.id ASC';
+
+  const records = db.prepare(query).all(...params);
 
   // Generate CSV rows
   const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Marked At', 'Geo Verified'];
@@ -313,6 +327,92 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   return res.send(csvContent);
+});
+
+// 6. Export Attendance as Excel XLSX
+router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
+  const sessionId = parseInt(req.params.sessionId, 10);
+  if (isNaN(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session ID' });
+  }
+
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const { department, year } = req.query;
+  let query = `
+    SELECT 
+      a.id,
+      s.student_id,
+      s.name,
+      s.usn,
+      s.department,
+      s.year,
+      s.cycle,
+      s.mobile,
+      a.marked_at,
+      a.geo_verified
+    FROM attendance a
+    JOIN students s ON a.student_id = s.student_id
+    WHERE a.session_id = ?
+  `;
+  const params = [sessionId];
+  if (department && department !== 'ALL') {
+    query += ' AND s.department = ?';
+    params.push(department);
+  }
+  if (year && year !== 'ALL') {
+    query += ' AND s.year = ?';
+    params.push(parseInt(year, 10));
+  }
+  query += ' ORDER BY a.id ASC';
+
+  const records = db.prepare(query).all(...params);
+
+  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Marked At', 'Geo Verified'];
+  const data = [
+    headers,
+    ...records.map((r, index) => [
+      index + 1,
+      r.student_id,
+      r.name,
+      r.usn,
+      r.department,
+      r.year,
+      r.cycle || 'N/A',
+      r.mobile,
+      r.marked_at,
+      r.geo_verified ? 'Yes' : 'No'
+    ])
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 6 },
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 8 },
+    { wch: 10 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 14 }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `Attendance_${session.subject_name.replace(/[^a-zA-Z0-9]/g, '_')}_Hour${session.hour_number}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(buffer);
 });
 
 module.exports = router;

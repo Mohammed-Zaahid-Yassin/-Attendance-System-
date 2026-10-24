@@ -92,9 +92,21 @@ function checkGeoFence(session, studentLat, studentLng) {
   }
 
   // 2. Fallback to center point + radius
-  const cLat = parseFloat(session.geo_lat);
-  const cLng = parseFloat(session.geo_lng);
-  const radius = parseFloat(session.geo_radius_m) || 100;
+  let cLat = parseFloat(session.geo_lat);
+  let cLng = parseFloat(session.geo_lng);
+  let radius = parseFloat(session.geo_radius_m) || 100;
+
+  if (isNaN(cLat) || isNaN(cLng)) {
+    try {
+      const db = require('../db');
+      const defaultVenue = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
+      if (defaultVenue) {
+        cLat = defaultVenue.geo_lat;
+        cLng = defaultVenue.geo_lng;
+        radius = defaultVenue.geo_radius_m || 100;
+      }
+    } catch {}
+  }
 
   if (isNaN(cLat) || isNaN(cLng)) {
     return { allowed: true, reason: 'Auditorium coordinates not configured properly' };

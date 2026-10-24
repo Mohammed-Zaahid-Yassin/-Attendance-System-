@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import axios from 'axios';
 import App from './App.jsx';
 import './index.css';
+import 'leaflet/dist/leaflet.css';
 
 // Configure Axios baseURL:
 // Default to relative /api paths so requests go through Vercel's same-origin proxy (in prod)

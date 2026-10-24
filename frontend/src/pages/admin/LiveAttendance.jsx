@@ -11,7 +11,11 @@ import {
   Radio,
   MapPin,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet,
+  Filter,
+  ArrowUpDown,
+  X
 } from 'lucide-react';
 
 export default function LiveAttendance() {
@@ -78,10 +82,22 @@ export default function LiveAttendance() {
     }
   }, [selectedSessionId, isLivePolling]);
 
-  // Export CSV
-  const handleExportCSV = () => {
+  const [selectedDept, setSelectedDept] = useState('ALL');
+  const [selectedYear, setSelectedYear] = useState('ALL');
+  const [sortBy, setSortBy] = useState('time_desc'); // 'time_desc' | 'time_asc' | 'name_asc' | 'usn_asc'
+
+  // Export CSV or XLSX with applied department & year filters
+  const handleExport = (format = 'csv') => {
     if (!selectedSessionId) return;
-    const exportUrl = `/api/attendance/export/${selectedSessionId}`;
+    const params = new URLSearchParams();
+    if (selectedDept !== 'ALL') params.append('department', selectedDept);
+    if (selectedYear !== 'ALL') params.append('year', selectedYear);
+
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+    const exportUrl = format === 'xlsx'
+      ? `/api/attendance/export-xlsx/${selectedSessionId}${queryStr}`
+      : `/api/attendance/export/${selectedSessionId}${queryStr}`;
+
     const link = document.createElement('a');
     link.href = exportUrl;
     link.setAttribute('download', '');
@@ -132,16 +148,31 @@ export default function LiveAttendance() {
     }
   };
 
-  // Filter records by search
-  const filteredRecords = records.filter((r) => {
-    const s = searchTerm.toLowerCase();
-    return (
-      (r.name || '').toLowerCase().includes(s) ||
-      (r.student_id || '').toLowerCase().includes(s) ||
-      (r.usn || '').toLowerCase().includes(s) ||
-      (r.department || '').toLowerCase().includes(s)
-    );
-  });
+  // Unique departments present in current records
+  const availableDepts = Array.from(new Set(records.map(r => r.department).filter(Boolean))).sort();
+
+  // Filter and sort records
+  const filteredRecords = records
+    .filter((r) => {
+      const s = searchTerm.toLowerCase();
+      const matchesSearch =
+        (r.name || '').toLowerCase().includes(s) ||
+        (r.student_id || '').toLowerCase().includes(s) ||
+        (r.usn || '').toLowerCase().includes(s) ||
+        (r.department || '').toLowerCase().includes(s);
+
+      const matchesDept = selectedDept === 'ALL' || r.department === selectedDept;
+      const matchesYear = selectedYear === 'ALL' || String(r.year) === String(selectedYear);
+
+      return matchesSearch && matchesDept && matchesYear;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'time_desc') return b.id - a.id;
+      if (sortBy === 'time_asc') return a.id - b.id;
+      if (sortBy === 'name_asc') return (a.name || '').localeCompare(b.name || '');
+      if (sortBy === 'usn_asc') return (a.usn || '').localeCompare(b.usn || '');
+      return 0;
+    });
 
   return (
     <AdminLayout>
@@ -177,13 +208,25 @@ export default function LiveAttendance() {
               <span>{isLivePolling ? 'Live Feed ON' : 'Paused'}</span>
             </button>
 
+            {/* Export CSV & XLSX buttons */}
             <button
-              onClick={handleExportCSV}
+              onClick={() => handleExport('csv')}
               disabled={!records.length}
-              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#f5f0ea] hover:border-amber-500/50 hover:bg-[#201c18] transition disabled:opacity-40"
+              title="Export filtered records to CSV"
             >
-              <Download className="h-3.5 w-3.5" />
-              <span>Export CSV (SQLite)</span>
+              <Download className="h-3.5 w-3.5 text-amber-400" />
+              <span>CSV</span>
+            </button>
+
+            <button
+              onClick={() => handleExport('xlsx')}
+              disabled={!records.length}
+              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-40"
+              title="Export filtered records to Excel XLSX"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              <span>Excel (.XLSX)</span>
             </button>
           </div>
         </div>
@@ -260,16 +303,103 @@ export default function LiveAttendance() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#706860]" />
-          <input
-            type="text"
-            placeholder="Search attendees by Name, Student ID, USN, or Department..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] pl-11 pr-4 py-3 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
-          />
+        {/* Search & Filter Toolbar */}
+        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            {/* Search Input */}
+            <div className="relative md:col-span-5">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#706860]" />
+              <input
+                type="text"
+                placeholder="Search by Name, Student ID, USN, Department..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#181512] pl-10 pr-3.5 py-2 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#706860] hover:text-[#f5f0ea]"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Department Filter */}
+            <div className="md:col-span-3">
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                aria-label="Filter by department"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              >
+                <option value="ALL">All Departments</option>
+                {availableDepts.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Academic Year Filter */}
+            <div className="md:col-span-2">
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                aria-label="Filter by academic year"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              >
+                <option value="ALL">All Years</option>
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3">3rd Year</option>
+                <option value="4">4th Year</option>
+              </select>
+            </div>
+
+            {/* Sort Options */}
+            <div className="md:col-span-2">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Sort attendance list"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              >
+                <option value="time_desc">Newest First</option>
+                <option value="time_asc">Oldest First</option>
+                <option value="name_asc">Name (A-Z)</option>
+                <option value="usn_asc">USN / Admission</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Active Filter Badges & Count */}
+          <div className="flex flex-wrap items-center justify-between text-xs text-[#a39b94] pt-1 border-t border-[rgba(255,235,215,0.04)]">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs">
+                Showing <strong className="text-amber-400 font-bold">{filteredRecords.length}</strong> of {records.length} records
+              </span>
+              {(selectedDept !== 'ALL' || selectedYear !== 'ALL' || searchTerm) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDept('ALL');
+                    setSelectedYear('ALL');
+                    setSearchTerm('');
+                  }}
+                  className="text-amber-400 hover:underline text-[11px] ml-2"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+            {(selectedDept !== 'ALL' || selectedYear !== 'ALL') && (
+              <span className="text-[11px] text-[#706860]">
+                Exports will include filtered results ({selectedDept !== 'ALL' ? selectedDept : 'All Depts'}, {selectedYear !== 'ALL' ? `Yr ${selectedYear}` : 'All Years'})
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Live Attendance Table */}

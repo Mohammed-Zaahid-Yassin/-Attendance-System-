@@ -56,23 +56,82 @@ export default function ScanPage() {
       });
   }, [token]);
 
-  // Request browser geolocation in background
-  useEffect(() => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setCoords({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude
-          });
-          setLocationStatus('acquired');
-        },
-        () => {
-          setLocationStatus('denied');
-        },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
-      );
+  const [locationError, setLocationError] = useState('');
+
+  // Robust location acquisition with high-accuracy fallback and watchPosition
+  const requestLocation = () => {
+    if (!('geolocation' in navigator)) {
+      setLocationStatus('denied');
+      setLocationError('Geolocation not supported on this browser');
+      return;
     }
+
+    setLocationStatus('locating');
+    setLocationError('');
+
+    const handleSuccess = (pos) => {
+      setCoords({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      });
+      setLocationStatus('acquired');
+      setLocationError('');
+    };
+
+    const handleLowAccuracyFallback = (err) => {
+      // Fallback to low-accuracy (faster indoors)
+      navigator.geolocation.getCurrentPosition(
+        handleSuccess,
+        (fallbackErr) => {
+          setLocationStatus('denied');
+          if (fallbackErr.code === 1) {
+            setLocationError('Location permission denied. Please allow location in your browser settings.');
+          } else if (fallbackErr.code === 2) {
+            setLocationError('Position unavailable. Ensure device GPS/Location service is toggled on.');
+          } else {
+            setLocationError('GPS signal timed out. Tap Retry Location.');
+          }
+        },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+      );
+    };
+
+    // First attempt: High accuracy
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess,
+      handleLowAccuracyFallback,
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  };
+
+  useEffect(() => {
+    requestLocation();
+
+    // Also start a watchPosition for continuous lock
+    let watchId = null;
+    if ('geolocation' in navigator) {
+      try {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            setCoords({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude
+            });
+            setLocationStatus('acquired');
+          },
+          () => {},
+          { enableHighAccuracy: false, maximumAge: 60000 }
+        );
+      } catch {}
+    }
+
+    return () => {
+      if (watchId !== null && 'geolocation' in navigator) {
+        try {
+          navigator.geolocation.clearWatch(watchId);
+        } catch {}
+      }
+    };
   }, []);
 
   const handleScanSuccess = (scannedToken) => {
@@ -277,7 +336,7 @@ export default function ScanPage() {
         </div>
 
         {/* QR Token Status Card */}
-        <div className="mb-5 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
+        <div className="mb-3 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
           <div className="flex items-center gap-2.5">
             <span className={`h-2.5 w-2.5 rounded-full ${token ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
             <span className="text-xs text-[#f5f0ea] font-medium">
@@ -293,6 +352,50 @@ export default function ScanPage() {
             <span>{token ? 'Rescan Screen' : 'Open Camera'}</span>
           </button>
         </div>
+
+        {/* Location Status Card */}
+        <div className="mb-5 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            {locationStatus === 'acquired' ? (
+              <>
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> GPS Location Acquired
+                </span>
+              </>
+            ) : locationStatus === 'locating' ? (
+              <>
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                <span className="text-xs text-amber-400 font-medium flex items-center gap-1">
+                  <RotateCcw className="h-3.5 w-3.5 animate-spin" /> Acquiring GPS lock...
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="h-2 w-2 rounded-full bg-red-400" />
+                <span className="text-xs text-red-300 font-medium flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Location Unavailable
+                </span>
+              </>
+            )}
+          </div>
+          {locationStatus !== 'acquired' && (
+            <button
+              type="button"
+              onClick={requestLocation}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Retry GPS</span>
+            </button>
+          )}
+        </div>
+
+        {locationError && locationStatus === 'denied' && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-300/90 leading-relaxed">
+            {locationError}
+          </div>
+        )}
 
         {/* Error Alert */}
         {errorMsg && (

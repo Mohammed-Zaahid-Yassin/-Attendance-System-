@@ -70,6 +70,31 @@ function initDb() {
     console.error('[DB Migration]', migErr);
   }
 
+  // Venue Configurations Table (Persistent administrative venue coordinates & radius)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS venue_configs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      venue_name TEXT NOT NULL DEFAULT 'MVJCE Central Auditorium',
+      geo_lat REAL NOT NULL DEFAULT 12.9830,
+      geo_lng REAL NOT NULL DEFAULT 77.7600,
+      geo_radius_m INTEGER NOT NULL DEFAULT 100,
+      geo_corners TEXT,
+      mappls_api_key TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed default venue if none exists
+  const existingVenue = db.prepare('SELECT id FROM venue_configs LIMIT 1').get();
+  if (!existingVenue) {
+    db.prepare(`
+      INSERT INTO venue_configs (venue_name, geo_lat, geo_lng, geo_radius_m)
+      VALUES (?, ?, ?, ?)
+    `).run('MVJCE Central Auditorium', 12.983020, 77.759970, 100);
+    console.log('[DB] Default venue configuration initialized: MVJCE Central Auditorium');
+  }
+
+
   // QR Tokens Table (rotates every 18-20s)
   db.exec(`
     CREATE TABLE IF NOT EXISTS qr_tokens (
