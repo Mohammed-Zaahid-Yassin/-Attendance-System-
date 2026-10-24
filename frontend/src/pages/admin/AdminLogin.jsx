@@ -28,7 +28,10 @@ export default function AdminLogin() {
       localStorage.setItem('admin_user', JSON.stringify(res.data.admin));
       navigate('/admin/dashboard');
     } catch (err) {
-      setErrorMsg(err.response?.data?.error || 'Invalid credentials');
+      console.error('[AdminLogin Error]', err);
+      const serverMsg = err.response?.data?.error;
+      const networkMsg = err.message;
+      setErrorMsg(serverMsg || (networkMsg && networkMsg !== 'Network Error' ? networkMsg : 'Invalid credentials or network timeout. Please try again.'));
     } finally {
       setLoading(false);
     }
