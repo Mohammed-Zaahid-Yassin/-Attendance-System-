@@ -259,7 +259,8 @@ export default function AdminSettings() {
   }, []);
 
   useEffect(() => {
-    axios.get('/api/admin/registration-qr', axiosConfig)
+    const originParam = encodeURIComponent(window.location.origin);
+    axios.get(`/api/admin/registration-qr?origin=${originParam}`, axiosConfig)
       .then((res) => setRegData(res.data))
       .catch(() => {});
     loadVenueConfig();

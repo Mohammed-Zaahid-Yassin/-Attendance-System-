@@ -136,11 +136,24 @@ router.post('/register', (req, res) => {
 
 // Admin Route to generate the static QR code for student registration
 router.get('/admin/registration-qr', adminAuth, async (req, res) => {
-  try {
-    // Use FRONTEND_URL env var — never derive from req.headers.referer.
-    // That causes localhost URLs to be encoded when admin is on dev server.
-    const frontendOrigin = (process.env.FRONTEND_URL || '').replace(/\/$/, '')
-      || `${req.protocol || 'https'}://${req.headers.host}`;
+    // Determine the frontend origin:
+    // 1. Explicit ?origin query param sent by frontend (e.g. window.location.origin)
+    // 2. FRONTEND_URL environment variable (if configured)
+    // 3. x-forwarded-host header (when requests pass through Vercel's proxy rewrite)
+    // 4. referer header origin (if present from browser request)
+    // 5. Default production Vercel deployment URL
+    let frontendOrigin = (
+      req.query.origin ||
+      process.env.FRONTEND_URL ||
+      (req.headers['x-forwarded-host'] ? `https://${req.headers['x-forwarded-host']}` : '') ||
+      (req.headers.referer ? new URL(req.headers.referer).origin : '') ||
+      'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app'
+    ).replace(/\/$/, '');
+
+    // Safeguard: if origin points to the Render backend service, rewrite to Vercel
+    if (frontendOrigin.includes('onrender.com')) {
+      frontendOrigin = 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app';
+    }
 
     const registrationUrl = `${frontendOrigin}/register?key=${encodeURIComponent(REGISTRATION_KEY)}`;
 

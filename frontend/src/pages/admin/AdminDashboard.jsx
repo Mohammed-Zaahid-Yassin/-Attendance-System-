@@ -99,7 +99,8 @@ export default function AdminDashboard() {
 
   const fetchStaticRegistrationQR = async () => {
     try {
-      const res = await axios.get('/api/admin/registration-qr', axiosConfig);
+      const originParam = encodeURIComponent(window.location.origin);
+      const res = await axios.get(`/api/admin/registration-qr?origin=${originParam}`, axiosConfig);
       setStaticQrData(res.data);
     } catch (err) {
       console.error('Error fetching registration QR:', err);

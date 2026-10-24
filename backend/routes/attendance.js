@@ -61,11 +61,24 @@ router.get('/token/qr/:sessionId', async (req, res) => {
   }
 
   try {
-    // Use FRONTEND_URL env var to guarantee correct production domain.
-    // Never derive from req.headers.referer — that breaks when admin uses a
-    // different origin (dev server, localhost) than the students' Vercel URL.
-    const frontendOrigin = (process.env.FRONTEND_URL || '').replace(/\/$/, '')
-      || `${req.protocol || 'https'}://${req.headers.host}`;
+    // Determine the frontend origin:
+    // 1. Explicit ?origin query param sent by frontend (e.g. window.location.origin)
+    // 2. FRONTEND_URL environment variable (if configured)
+    // 3. x-forwarded-host header (when requests pass through Vercel's proxy rewrite)
+    // 4. referer header origin (if present from browser request)
+    // 5. Default production Vercel deployment URL
+    let frontendOrigin = (
+      req.query.origin ||
+      process.env.FRONTEND_URL ||
+      (req.headers['x-forwarded-host'] ? `https://${req.headers['x-forwarded-host']}` : '') ||
+      (req.headers.referer ? new URL(req.headers.referer).origin : '') ||
+      'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app'
+    ).replace(/\/$/, '');
+
+    // Safeguard: if origin points to the Render backend service, rewrite to Vercel
+    if (frontendOrigin.includes('onrender.com')) {
+      frontendOrigin = 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app';
+    }
 
     // Target URL encoded in the QR code: points to student scan page with token
     const scanUrl = `${frontendOrigin}/scan?token=${encodeURIComponent(currentToken.token)}`;

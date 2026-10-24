@@ -179,8 +179,9 @@ export default function DisplayPage() {
 
     const fetchToken = async () => {
       try {
+        const originParam = encodeURIComponent(window.location.origin);
         const [qrRes, liveRes] = await Promise.all([
-          axios.get(`/api/token/qr/${selectedSessionId}`),
+          axios.get(`/api/token/qr/${selectedSessionId}?origin=${originParam}`),
           axios.get(`/api/attendance/live/${selectedSessionId}`)
         ]);
         setTokenData(qrRes.data);
