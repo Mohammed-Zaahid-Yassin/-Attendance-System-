@@ -89,9 +89,9 @@ router.post('/sessions/start', (req, res) => {
     const insertStmt = db.prepare(`
       INSERT INTO sessions (
         subject_name, subject_code, hour_number, started_by, 
-        geo_fence_enabled, geo_lat, geo_lng, geo_radius_m, geo_corners, pin_required
+        geo_fence_enabled, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, pin_required
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insertStmt.run(
@@ -104,11 +104,11 @@ router.post('/sessions/start', (req, res) => {
       lng,
       radius,
       cornersJson,
+      req.body.geo_type === 'polygon' ? 'polygon' : 'circle',
       isPinRequired
     );
 
     const sessionId = result.lastInsertRowid;
-    // Generate initial QR token & PIN immediately
     generateTokenForSession(sessionId);
 
     const newSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
@@ -194,25 +194,31 @@ router.patch('/sessions/:id/geofence', (req, res) => {
 
   const cornersJson = corners !== undefined 
     ? (corners ? (typeof corners === 'string' ? corners : JSON.stringify(corners)) : null)
-    : session.geo_corners;
+    : undefined;
 
-  const updateStmt = db.prepare(`
-    UPDATE sessions 
-    SET geo_fence_enabled = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?
-    WHERE id = ?
-  `);
+  // Build SET clause dynamically to only update provided fields
+  const fields = [];
+  const values = [];
 
-  updateStmt.run(
-    enabled !== undefined ? (enabled ? 1 : 0) : session.geo_fence_enabled,
-    lat !== undefined ? (lat ? parseFloat(lat) : null) : session.geo_lat,
-    lng !== undefined ? (lng ? parseFloat(lng) : null) : session.geo_lng,
-    radius !== undefined ? parseInt(radius, 10) : (session.geo_radius_m || 100),
-    cornersJson,
-    sessionId
-  );
+  if (enabled !== undefined) { fields.push('geo_fence_enabled = ?'); values.push(enabled ? 1 : 0); }
+  if (lat !== undefined) { fields.push('geo_lat = ?'); values.push(lat ? parseFloat(lat) : null); }
+  if (lng !== undefined) { fields.push('geo_lng = ?'); values.push(lng ? parseFloat(lng) : null); }
+  if (radius !== undefined) { fields.push('geo_radius_m = ?'); values.push(parseInt(radius, 10) || 100); }
+  if (cornersJson !== undefined) { fields.push('geo_corners = ?'); values.push(cornersJson); }
+  if (req.body.geo_type !== undefined) {
+    fields.push('geo_type = ?');
+    values.push(req.body.geo_type === 'polygon' ? 'polygon' : 'circle');
+  }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'No update fields provided' });
+  }
+
+  values.push(sessionId);
+  db.prepare(`UPDATE sessions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
-  return res.json({ success: true, session: updated, message: 'Geofence coordinates and radius updated' });
+  return res.json({ success: true, session: updated, message: 'Geofence updated' });
 });
 
 // 6b. On-the-fly Toggle 1: Enable / Disable Geofence toggle
@@ -519,18 +525,26 @@ router.get('/venue-config', (req, res) => {
 });
 
 router.post('/venue-config', (req, res) => {
-  const { venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, mappls_api_key } = req.body;
+  const { venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, mappls_api_key } = req.body;
   if (!geo_lat || !geo_lng) {
     return res.status(400).json({ error: 'Latitude and Longitude are required' });
   }
 
   const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
+  const venueType = geo_type === 'polygon' ? 'polygon' : 'circle';
 
   const existing = db.prepare('SELECT id FROM venue_configs ORDER BY id DESC LIMIT 1').get();
   if (existing) {
+    // Add geo_type column if it doesn't exist yet (migration)
+    try {
+      const cols = db.prepare('PRAGMA table_info(venue_configs)').all().map(c => c.name);
+      if (!cols.includes('geo_type')) {
+        db.exec('ALTER TABLE venue_configs ADD COLUMN geo_type TEXT DEFAULT \'circle\'');
+      }
+    } catch {}
     db.prepare(`
       UPDATE venue_configs 
-      SET venue_name = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, mappls_api_key = ?, updated_at = CURRENT_TIMESTAMP
+      SET venue_name = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, geo_type = ?, mappls_api_key = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       venue_name || 'MVJCE Central Auditorium',
@@ -538,6 +552,7 @@ router.post('/venue-config', (req, res) => {
       parseFloat(geo_lng),
       parseInt(geo_radius_m, 10) || 100,
       cornersJson,
+      venueType,
       mappls_api_key || '',
       existing.id
     );
@@ -566,9 +581,12 @@ router.get('/saved-locations', (req, res) => {
 });
 
 router.post('/saved-locations', (req, res) => {
-  const { name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
+  const { name, description, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Location name is required' });
+  }
+  if (!geo_lat || !geo_lng) {
+    return res.status(400).json({ error: 'Latitude and longitude are required' });
   }
 
   const locType = type === 'polygon' ? 'polygon' : 'circle';
@@ -579,15 +597,16 @@ router.post('/saved-locations', (req, res) => {
   }
 
   const insert = db.prepare(`
-    INSERT INTO saved_locations (name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO saved_locations (name, description, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = insert.run(
     name.trim(),
+    (description || '').trim(),
     locType,
-    geo_lat ? parseFloat(geo_lat) : null,
-    geo_lng ? parseFloat(geo_lng) : null,
+    parseFloat(geo_lat),
+    parseFloat(geo_lng),
     geo_radius_m ? parseInt(geo_radius_m, 10) : 100,
     cornersJson,
     is_default ? 1 : 0

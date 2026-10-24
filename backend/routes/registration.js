@@ -137,22 +137,22 @@ router.post('/register', (req, res) => {
 // Admin Route to generate the static QR code for student registration
 router.get('/admin/registration-qr', adminAuth, async (req, res) => {
   try {
-    const host = req.headers.host || `localhost:${process.env.PORT || 3001}`;
-    const protocol = req.protocol || 'http';
-    
-    // In dev, frontend is typically on port 5173 or same origin
-    const clientOrigin = req.headers.referer 
-      ? new URL(req.headers.referer).origin 
-      : `${protocol}://${host}`;
+    // Use FRONTEND_URL env var — never derive from req.headers.referer.
+    // That causes localhost URLs to be encoded when admin is on dev server.
+    const frontendOrigin = (process.env.FRONTEND_URL || '').replace(/\/$/, '')
+      || `${req.protocol || 'https'}://${req.headers.host}`;
 
-    const registrationUrl = `${clientOrigin}/register?key=${encodeURIComponent(REGISTRATION_KEY)}`;
-    
+    const registrationUrl = `${frontendOrigin}/register?key=${encodeURIComponent(REGISTRATION_KEY)}`;
+
+    // 512x512 with pure black modules — maximum compatibility with native
+    // iOS/Android cameras and older QR reader apps.
+    // Error correction M (15%) is a good balance between density and resilience.
     const qrDataUrl = await QRCode.toDataURL(registrationUrl, {
-      errorCorrectionLevel: 'H',
-      margin: 2,
-      width: 400,
+      errorCorrectionLevel: 'M',
+      margin: 3,
+      width: 512,
       color: {
-        dark: '#1e1b4b', // Indigo-950
+        dark: '#000000',
         light: '#ffffff'
       }
     });

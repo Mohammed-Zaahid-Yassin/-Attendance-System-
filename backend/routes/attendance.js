@@ -61,21 +61,21 @@ router.get('/token/qr/:sessionId', async (req, res) => {
   }
 
   try {
-    const host = req.headers.host || `localhost:${process.env.PORT || 3001}`;
-    const protocol = req.protocol || 'http';
-    const clientOrigin = req.headers.referer
-      ? new URL(req.headers.referer).origin
-      : `${protocol}://${host}`;
+    // Use FRONTEND_URL env var to guarantee correct production domain.
+    // Never derive from req.headers.referer — that breaks when admin uses a
+    // different origin (dev server, localhost) than the students' Vercel URL.
+    const frontendOrigin = (process.env.FRONTEND_URL || '').replace(/\/$/, '')
+      || `${req.protocol || 'https'}://${req.headers.host}`;
 
     // Target URL encoded in the QR code: points to student scan page with token
-    const scanUrl = `${clientOrigin}/scan?token=${encodeURIComponent(currentToken.token)}`;
+    const scanUrl = `${frontendOrigin}/scan?token=${encodeURIComponent(currentToken.token)}`;
 
     const qrDataUrl = await QRCode.toDataURL(scanUrl, {
       errorCorrectionLevel: 'H',
       margin: 2,
-      width: 400,
+      width: 512,
       color: {
-        dark: '#080605', // Deep obsidian matching Spotlight
+        dark: '#000000',
         light: '#ffffff'
       }
     });

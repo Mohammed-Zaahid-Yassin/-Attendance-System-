@@ -66,6 +66,10 @@ function initDb() {
     if (!sessionCols.includes('static_qr_mode')) {
       db.exec(`ALTER TABLE sessions ADD COLUMN static_qr_mode INTEGER DEFAULT 0`);
     }
+    // geo_type: 'circle' | 'polygon' — determines which validation backend uses
+    if (!sessionCols.includes('geo_type')) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN geo_type TEXT DEFAULT 'circle'`);
+    }
   } catch (migErr) {
     console.error('[DB Migration]', migErr);
   }
@@ -101,20 +105,35 @@ function initDb() {
     `).run(existingVenue.id);
   }
 
-  // Saved Locations Table (4-5 predefined or custom locations admin can choose from)
+  // Saved Locations Table (admin-defined persistent location presets)
   db.exec(`
     CREATE TABLE IF NOT EXISTS saved_locations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      description TEXT,
       type TEXT DEFAULT 'circle',
       geo_lat REAL,
       geo_lng REAL,
       geo_radius_m INTEGER DEFAULT 100,
       geo_corners TEXT,
       is_default INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migrate saved_locations if missing columns
+  try {
+    const locCols = db.prepare(`PRAGMA table_info(saved_locations)`).all().map(c => c.name);
+    if (!locCols.includes('description')) {
+      db.exec(`ALTER TABLE saved_locations ADD COLUMN description TEXT`);
+    }
+    if (!locCols.includes('updated_at')) {
+      db.exec(`ALTER TABLE saved_locations ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration saved_locations]', migErr);
+  }
 
   // Seed 5 accurate MVJ College of Engineering locations if none exist
   const existingLocationsCount = db.prepare('SELECT COUNT(*) as count FROM saved_locations').get().count;

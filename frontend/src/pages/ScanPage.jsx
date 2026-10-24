@@ -1,18 +1,92 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { 
-  Camera, 
-  CheckCircle, 
-  AlertTriangle, 
-  MapPin, 
-  Info, 
-  RotateCcw, 
+import {
+  Camera,
+  CheckCircle,
+  AlertTriangle,
+  MapPin,
+  Info,
+  RotateCcw,
   ArrowRight,
-  ShieldCheck,
-  Check
+  WifiOff,
+  Settings,
+  ExternalLink
 } from 'lucide-react';
 import QRScannerModal from '../components/QRScannerModal';
+
+/* ─────────────────────────────────────────────────────────────
+   Location error code → user-facing message + guidance map
+───────────────────────────────────────────────────────────── */
+const GEO_ERROR = {
+  NOT_SUPPORTED: {
+    title: 'Location Not Supported',
+    body: 'Your browser does not support GPS location access. Please use Chrome or Safari on a modern phone.',
+    canRetry: false,
+    showSettings: false
+  },
+  INSECURE_CONTEXT: {
+    title: 'Secure Connection Required',
+    body: 'GPS requires an HTTPS connection. If you opened this page over HTTP, please use the HTTPS link instead.',
+    canRetry: false,
+    showSettings: false
+  },
+  PERMISSION_DENIED: {
+    title: 'Location Permission Blocked',
+    body: 'You have previously denied location access to this website. To fix this:\n\n• In Chrome: tap the lock icon beside the URL → Site settings → Location → Allow\n• In Samsung Internet: Settings → Sites and downloads → Allow location\n• In Safari: Settings → Safari → Location → Allow\n\nAfter changing the setting, return here and tap Retry.',
+    canRetry: true,
+    showSettings: true
+  },
+  POSITION_UNAVAILABLE: {
+    title: 'Device Location Unavailable',
+    body: 'Your device cannot determine its location. Please:\n1. Enable GPS / Location Services in your phone settings\n2. Move to an area with better signal or open sky if possible\n3. Tap Retry Location below',
+    canRetry: true,
+    showSettings: true
+  },
+  TIMEOUT: {
+    title: 'GPS Signal Timed Out',
+    body: 'Your device took too long to get a GPS fix. This happens indoors or when signal is weak. Please tap Retry — the second attempt uses a faster network-assisted location.',
+    canRetry: true,
+    showSettings: false
+  },
+  UNKNOWN: {
+    title: 'Location Error',
+    body: 'An unexpected error occurred while accessing GPS. Please tap Retry.',
+    canRetry: true,
+    showSettings: false
+  }
+};
+
+/* Maps a GeolocationPositionError to our error code */
+function classifyGeoError(err) {
+  if (!('geolocation' in navigator)) return 'NOT_SUPPORTED';
+  if (!window.isSecureContext) return 'INSECURE_CONTEXT';
+  if (!err) return 'UNKNOWN';
+  switch (err.code) {
+    case 1: return 'PERMISSION_DENIED';
+    case 2: return 'POSITION_UNAVAILABLE';
+    case 3: return 'TIMEOUT';
+    default: return 'UNKNOWN';
+  }
+}
+
+/* Maps a backend geofence error code to student-facing message */
+function geofenceErrorMessage(backendError) {
+  if (!backendError) return backendError;
+  if (backendError.includes('OUTSIDE_BOUNDARY') || backendError.includes('outside the allowed') || backendError.includes('outside the designated')) {
+    return backendError; // Already descriptive — show as-is
+  }
+  if (backendError.includes('LOCATION_MISSING') || backendError.includes('could not be obtained')) {
+    return 'Your GPS location could not be confirmed. Please allow location access in your browser and tap Retry GPS, then submit again.';
+  }
+  if (backendError.includes('VENUE_NOT_CONFIGURED')) {
+    return 'The attendance venue has not been configured. Please inform your administrator.';
+  }
+  if (backendError.includes('POLYGON_INVALID')) {
+    return 'The venue boundary configuration has an error. Please inform your administrator.';
+  }
+  return backendError;
+}
 
 export default function ScanPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -30,110 +104,104 @@ export default function ScanPage() {
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [coords, setCoords] = useState(null);
-  const [locationStatus, setLocationStatus] = useState('idle'); // 'idle' | 'acquired' | 'denied'
 
-  // Sync token from URL query params
+  // locationStatus: 'idle' | 'locating' | 'acquired' | 'error'
+  const [locationStatus, setLocationStatus] = useState('idle');
+  const [locationErrorCode, setLocationErrorCode] = useState(null); // key in GEO_ERROR
+  const [showLocationHelp, setShowLocationHelp] = useState(false);
+
+  const watchIdRef = useRef(null);
+  const acquiredOnceRef = useRef(false); // prevent re-showing error after success
+
+  // ── Sync token from URL ────────────────────────────────────────────────
   useEffect(() => {
-    if (tokenFromUrl) {
-      setToken(tokenFromUrl);
-    }
+    if (tokenFromUrl) setToken(tokenFromUrl);
   }, [tokenFromUrl]);
 
-  // When token is set, fetch token requirements (whether PIN is required, geofence, etc.)
+  // ── Fetch token requirements when token changes ────────────────────────
   useEffect(() => {
-    if (!token) {
-      setTokenInfo(null);
-      return;
-    }
-
+    if (!token) { setTokenInfo(null); return; }
     axios
       .get(`/api/attendance/token-info?token=${encodeURIComponent(token.trim())}`)
-      .then((res) => {
-        setTokenInfo(res.data);
-      })
-      .catch(() => {
-        setTokenInfo(null);
-      });
+      .then((res) => setTokenInfo(res.data))
+      .catch(() => setTokenInfo(null));
   }, [token]);
 
-  const [locationError, setLocationError] = useState('');
-
-  // Robust location acquisition with high-accuracy fallback and watchPosition
-  const requestLocation = () => {
+  // ── Core location acquisition ─────────────────────────────────────────
+  const requestLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
-      setLocationStatus('denied');
-      setLocationError('Geolocation not supported on this browser');
+      setLocationStatus('error');
+      setLocationErrorCode('NOT_SUPPORTED');
+      return;
+    }
+    if (!window.isSecureContext) {
+      setLocationStatus('error');
+      setLocationErrorCode('INSECURE_CONTEXT');
       return;
     }
 
     setLocationStatus('locating');
-    setLocationError('');
+    setLocationErrorCode(null);
 
-    const handleSuccess = (pos) => {
-      setCoords({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude
-      });
+    const onSuccess = (pos) => {
+      acquiredOnceRef.current = true;
+      setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       setLocationStatus('acquired');
-      setLocationError('');
+      setLocationErrorCode(null);
+      setShowLocationHelp(false);
     };
 
-    const handleLowAccuracyFallback = (err) => {
-      // Fallback to low-accuracy (faster indoors)
+    // Two-stage acquisition:
+    // Stage 1 — high accuracy (GPS chip, ~8s timeout)
+    // Stage 2 — network-assisted fallback (faster, ~15s, 60s cache allowed)
+    const onHighAccuracyFail = (err) => {
+      if (acquiredOnceRef.current) return; // Already have a fix via watchPosition
       navigator.geolocation.getCurrentPosition(
-        handleSuccess,
+        onSuccess,
         (fallbackErr) => {
-          setLocationStatus('denied');
-          if (fallbackErr.code === 1) {
-            setLocationError('Location permission denied. Please allow location in your browser settings.');
-          } else if (fallbackErr.code === 2) {
-            setLocationError('Position unavailable. Ensure device GPS/Location service is toggled on.');
-          } else {
-            setLocationError('GPS signal timed out. Tap Retry Location.');
-          }
+          if (acquiredOnceRef.current) return;
+          setLocationStatus('error');
+          setLocationErrorCode(classifyGeoError(fallbackErr));
         },
         { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
       );
     };
 
-    // First attempt: High accuracy
-    navigator.geolocation.getCurrentPosition(
-      handleSuccess,
-      handleLowAccuracyFallback,
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-    );
-  };
+    navigator.geolocation.getCurrentPosition(onSuccess, onHighAccuracyFail, {
+      enableHighAccuracy: true,
+      timeout: 8000,
+      maximumAge: 30000
+    });
+  }, []);
 
+  // ── Continuous watch (improves accuracy over time) ────────────────────
   useEffect(() => {
     requestLocation();
 
-    // Also start a watchPosition for continuous lock
-    let watchId = null;
     if ('geolocation' in navigator) {
       try {
-        watchId = navigator.geolocation.watchPosition(
+        watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            setCoords({
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude
-            });
+            acquiredOnceRef.current = true;
+            setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
             setLocationStatus('acquired');
+            setLocationErrorCode(null);
           },
-          () => {},
-          { enableHighAccuracy: false, maximumAge: 60000 }
+          () => {}, // Silently ignore watch errors; we already handle via getCurrentPosition
+          { enableHighAccuracy: false, maximumAge: 30000 }
         );
       } catch {}
     }
 
     return () => {
-      if (watchId !== null && 'geolocation' in navigator) {
-        try {
-          navigator.geolocation.clearWatch(watchId);
-        } catch {}
+      if (watchIdRef.current !== null && 'geolocation' in navigator) {
+        try { navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+        watchIdRef.current = null;
       }
     };
-  }, []);
+  }, [requestLocation]);
 
+  // ── QR scan success ───────────────────────────────────────────────────
   const handleScanSuccess = (scannedToken) => {
     let cleanToken = scannedToken;
     try {
@@ -141,21 +209,19 @@ export default function ScanPage() {
         const parsedUrl = new URL(scannedToken);
         cleanToken = parsedUrl.searchParams.get('token') || scannedToken;
       }
-    } catch {
-      // scannedToken is raw string
-    }
+    } catch {}
     setToken(cleanToken);
     setSearchParams({ token: cleanToken });
   };
 
+  // ── Form submit ───────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!token) {
-      setErrorMsg('No QR token detected. Please scan the current QR code on the auditorium screen.');
+      setErrorMsg('No QR token detected. Please open the scanner and scan the QR code on the screen.');
       return;
     }
-
     if (!studentId.trim()) {
       setErrorMsg('Please enter your Student ID.');
       return;
@@ -167,6 +233,8 @@ export default function ScanPage() {
       return;
     }
 
+    // Warn if location not yet acquired but don't hard-block —
+    // the backend is authoritative; if geo is required it will reject cleanly
     setLoading(true);
     setErrorMsg('');
 
@@ -175,8 +243,8 @@ export default function ScanPage() {
         token: token.trim(),
         student_id: studentId.trim().toUpperCase(),
         unique_pin: uniquePin.trim(),
-        lat: coords?.lat,
-        lng: coords?.lng
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null
       };
 
       const res = await axios.post('/api/attendance/mark', payload);
@@ -188,7 +256,8 @@ export default function ScanPage() {
         setResultData(err.response.data);
       } else {
         setStatus('error');
-        setErrorMsg(err.response?.data?.error || 'Failed to mark attendance. Please verify your details.');
+        const rawError = err.response?.data?.error || 'Failed to mark attendance. Please verify your details.';
+        setErrorMsg(geofenceErrorMessage(rawError));
       }
     } finally {
       setLoading(false);
@@ -202,7 +271,11 @@ export default function ScanPage() {
     setUniquePin('');
   };
 
-  // SUCCESS STATE
+  // ── Derived state ─────────────────────────────────────────────────────
+  const isPinRequired = tokenInfo ? tokenInfo.pin_required : true;
+  const locInfo = locationErrorCode ? GEO_ERROR[locationErrorCode] : null;
+
+  // ── SUCCESS STATE ─────────────────────────────────────────────────────
   if (status === 'success' && resultData) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
@@ -210,49 +283,33 @@ export default function ScanPage() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
             <CheckCircle className="h-8 w-8" />
           </div>
-
           <p className="mt-4 text-center text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
             MVJ College of Engineering
           </p>
           <h1 className="mt-1 font-serif text-3xl font-normal text-[#f5f0ea]">
             Attendance <span className="italic text-emerald-400">Marked.</span>
           </h1>
-          <p className="mt-2 text-xs text-[#a39b94]">
-            Your presence has been securely verified and recorded.
-          </p>
+          <p className="mt-2 text-xs text-[#a39b94]">Your presence has been securely verified and recorded.</p>
 
           <div className="mt-6 divide-y divide-[rgba(255,235,215,0.06)] rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4 text-xs text-left">
-            <div className="flex justify-between py-2 text-[#a39b94]">
-              <span>Student Name</span>
-              <span className="font-semibold text-[#f5f0ea]">{resultData.student?.name}</span>
-            </div>
-            <div className="flex justify-between py-2 text-[#a39b94]">
-              <span>Student ID</span>
-              <span className="font-mono font-bold text-amber-400">{resultData.student?.student_id}</span>
-            </div>
-            <div className="flex justify-between py-2 text-[#a39b94]">
-              <span>USN</span>
-              <span className="font-mono font-medium text-[#f5f0ea]">{resultData.student?.usn}</span>
-            </div>
-            <div className="flex justify-between py-2 text-[#a39b94]">
-              <span>Session / Hour</span>
-              <span className="font-medium text-[#f5f0ea]">
-                {resultData.session?.subject_name} (Hour {resultData.session?.hour_number})
-              </span>
-            </div>
-            <div className="flex justify-between py-2 text-[#a39b94]">
-              <span>Recorded Time</span>
-              <span className="font-mono text-[#f5f0ea]">
-                {new Date(resultData.marked_at).toLocaleTimeString()}
-              </span>
-            </div>
+            {[
+              ['Student Name', resultData.student?.name],
+              ['Student ID', resultData.student?.student_id, 'font-mono font-bold text-amber-400'],
+              ['USN', resultData.student?.usn, 'font-mono'],
+              ['Session / Hour', `${resultData.session?.subject_name} (Hour ${resultData.session?.hour_number})`],
+              ['Recorded Time', new Date(resultData.marked_at).toLocaleTimeString(), 'font-mono']
+            ].map(([label, value, cls = '']) => (
+              <div key={label} className="flex justify-between py-2 text-[#a39b94]">
+                <span>{label}</span>
+                <span className={`font-medium text-[#f5f0ea] ${cls}`}>{value}</span>
+              </div>
+            ))}
           </div>
 
-          {/* Confirmation Notice */}
           <div className="mt-6 rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-center text-xs text-[#706860]">
             <p className="font-medium text-[#a39b94]">Session Attendance Locked</p>
             <p className="mt-1 text-[11px] leading-relaxed">
-              Your attendance for this session has been locked. Each attendee must mark attendance exclusively on their own mobile device.
+              Each attendee must mark attendance exclusively on their own mobile device.
             </p>
           </div>
         </div>
@@ -260,7 +317,7 @@ export default function ScanPage() {
     );
   }
 
-  // ALREADY MARKED STATE
+  // ── ALREADY MARKED STATE ──────────────────────────────────────────────
   if (status === 'already_marked') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
@@ -268,9 +325,7 @@ export default function ScanPage() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
             <AlertTriangle className="h-7 w-7" />
           </div>
-          <h2 className="mt-4 font-serif text-2xl font-normal text-[#f5f0ea]">
-            Already Recorded
-          </h2>
+          <h2 className="mt-4 font-serif text-2xl font-normal text-[#f5f0ea]">Already Recorded</h2>
           <p className="mt-2 text-xs text-[#a39b94] leading-relaxed">
             {resultData?.error || 'Attendance for this Student ID has already been recorded for this session.'}
           </p>
@@ -289,9 +344,7 @@ export default function ScanPage() {
     );
   }
 
-  // MAIN ATTENDANCE FORM
-  const isPinRequired = tokenInfo ? tokenInfo.pin_required : true;
-
+  // ── MAIN ATTENDANCE FORM ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#080605] flex flex-col justify-center py-12 px-4 sm:px-6">
       <div className="mx-auto w-full max-w-md">
@@ -306,25 +359,22 @@ export default function ScanPage() {
               Spotlight
             </span>
           </div>
-
           <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-[#f5f0ea]">
             Mark <span className="italic text-amber-400">Attendance.</span>
           </h1>
           <p className="mt-2 text-xs text-[#a39b94]">
-            {isPinRequired 
-              ? 'Enter your Student ID and the current PIN from the screen.' 
+            {isPinRequired
+              ? 'Enter your Student ID and the current PIN from the screen.'
               : 'Enter your Student ID to record your attendance.'}
           </p>
         </div>
 
-        {/* User Required Hint Banner: First 4 letters of name (CAPITAL) + last 4 digits of mobile */}
+        {/* Student ID hint */}
         <div className="mb-6 rounded-2xl border border-[rgba(240,150,80,0.25)] bg-gradient-to-r from-[#18130e] to-[#120f0d] p-4 text-xs shadow-lg">
           <div className="flex items-start gap-2.5">
             <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold uppercase tracking-wider text-amber-400 text-[11px]">
-                Student ID Hint:
-              </span>
+              <span className="font-semibold uppercase tracking-wider text-amber-400 text-[11px]">Student ID Hint:</span>
               <p className="mt-1 text-xs text-[#f5f0ea] font-medium leading-relaxed">
                 First 4 letters of your Name (CAPITAL) + Last 4 digits of your Mobile Number.
               </p>
@@ -335,7 +385,7 @@ export default function ScanPage() {
           </div>
         </div>
 
-        {/* QR Token Status Card */}
+        {/* QR Token Status */}
         <div className="mb-3 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
           <div className="flex items-center gap-2.5">
             <span className={`h-2.5 w-2.5 rounded-full ${token ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
@@ -354,7 +404,7 @@ export default function ScanPage() {
         </div>
 
         {/* Location Status Card */}
-        <div className="mb-5 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-2.5">
+        <div className="mb-2 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-2.5">
           <div className="flex items-center gap-2.5">
             {locationStatus === 'acquired' ? (
               <>
@@ -367,47 +417,111 @@ export default function ScanPage() {
               <>
                 <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
                 <span className="text-xs text-amber-400 font-medium flex items-center gap-1">
-                  <RotateCcw className="h-3.5 w-3.5 animate-spin" /> Acquiring GPS lock...
+                  <RotateCcw className="h-3.5 w-3.5 animate-spin" /> Acquiring GPS…
+                </span>
+              </>
+            ) : locationStatus === 'error' ? (
+              <>
+                <span className="h-2 w-2 rounded-full bg-red-400" />
+                <span className="text-xs text-red-300 font-medium flex items-center gap-1">
+                  <WifiOff className="h-3.5 w-3.5" />
+                  {locInfo?.title || 'Location Unavailable'}
                 </span>
               </>
             ) : (
               <>
-                <span className="h-2 w-2 rounded-full bg-red-400" />
-                <span className="text-xs text-red-300 font-medium flex items-center gap-1">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Location Unavailable
-                </span>
+                <span className="h-2 w-2 rounded-full bg-[#554e48]" />
+                <span className="text-xs text-[#a39b94]">GPS not started</span>
               </>
             )}
           </div>
+
           {locationStatus !== 'acquired' && (
-            <button
-              type="button"
-              onClick={requestLocation}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20"
-            >
-              <RotateCcw className="h-3 w-3" />
-              <span>Retry GPS</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {locationStatus === 'error' && (
+                <button
+                  type="button"
+                  onClick={() => setShowLocationHelp((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-full border border-[rgba(255,235,215,0.1)] bg-[#181512] px-2.5 py-1 text-[11px] text-[#a39b94] hover:text-[#f5f0ea]"
+                >
+                  <Info className="h-3 w-3" />
+                  <span>Help</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { acquiredOnceRef.current = false; requestLocation(); }}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Retry GPS</span>
+              </button>
+            </div>
           )}
         </div>
 
-        {locationError && locationStatus === 'denied' && (
-          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-300/90 leading-relaxed">
-            {locationError}
+        {/* Location Help Panel */}
+        {showLocationHelp && locInfo && (
+          <div className="mb-3 rounded-xl border border-amber-500/25 bg-[#18130e] p-4 text-[11px] text-[#c8b99a] leading-relaxed space-y-2">
+            <p className="font-semibold text-amber-300 text-xs">{locInfo.title}</p>
+            <p className="whitespace-pre-line">{locInfo.body}</p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {locInfo.canRetry && (
+                <button
+                  type="button"
+                  onClick={() => { acquiredOnceRef.current = false; setShowLocationHelp(false); requestLocation(); }}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-1.5 text-xs font-bold text-[#080605]"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Retry Location
+                </button>
+              )}
+              {locInfo.showSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Deep-link to browser settings on Android Chrome if possible
+                    try { window.open('chrome://settings/content/location', '_blank'); } catch {}
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#201c18] px-4 py-1.5 text-xs font-medium text-[#f5f0ea]"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  Open Settings
+                </button>
+              )}
+              <a
+                href="https://support.google.com/chrome/answer/142065"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-amber-400 underline hover:text-amber-300"
+              >
+                <ExternalLink className="h-3 w-3" />
+                How to enable location
+              </a>
+            </div>
           </div>
         )}
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-5 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-xs font-medium text-red-300">
+          <div className="mb-5 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-xs font-medium text-red-300 leading-relaxed">
             {errorMsg}
+            {(errorMsg.includes('GPS') || errorMsg.includes('location') || errorMsg.includes('Location')) && locationStatus !== 'acquired' && (
+              <button
+                type="button"
+                onClick={() => { acquiredOnceRef.current = false; requestLocation(); setErrorMsg(''); }}
+                className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/30 px-3 py-1 text-amber-400 text-[11px] font-semibold"
+              >
+                <RotateCcw className="h-3 w-3" /> Retry GPS
+              </button>
+            )}
           </div>
         )}
 
         {/* Form Card */}
         <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 1. Student ID */}
+            {/* Student ID */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
                 1. Student ID <span className="text-amber-500">*</span>
@@ -422,7 +536,7 @@ export default function ScanPage() {
               />
             </div>
 
-            {/* 2. Screen PIN (Only when active) */}
+            {/* Screen PIN */}
             {isPinRequired && (
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
@@ -440,7 +554,6 @@ export default function ScanPage() {
               </div>
             )}
 
-            {/* Spotlight Amber Submit CTA */}
             <button
               type="submit"
               disabled={loading}
@@ -448,8 +561,8 @@ export default function ScanPage() {
             >
               {loading ? (
                 <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/40 border-t-black"></div>
-                  <span>Verifying Attendance...</span>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/40 border-t-black" />
+                  <span>Verifying Attendance…</span>
                 </>
               ) : (
                 <>
@@ -462,7 +575,7 @@ export default function ScanPage() {
         </div>
       </div>
 
-      {/* html5-qrcode Camera Scanner Modal */}
+      {/* QR Scanner Modal */}
       <QRScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
