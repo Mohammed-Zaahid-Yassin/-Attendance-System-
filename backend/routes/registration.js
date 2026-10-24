@@ -136,6 +136,7 @@ router.post('/register', (req, res) => {
 
 // Admin Route to generate the static QR code for student registration
 router.get('/admin/registration-qr', adminAuth, async (req, res) => {
+  try {
     // Determine the frontend origin:
     // 1. Explicit ?origin query param sent by frontend (e.g. window.location.origin)
     // 2. FRONTEND_URL environment variable (if configured)

@@ -649,7 +649,7 @@ router.post('/saved-locations', (req, res) => {
 
 router.put('/saved-locations/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { name, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
+  const { name, description, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
 
   const existing = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(id);
   if (!existing) {
@@ -664,15 +664,29 @@ router.put('/saved-locations/:id', (req, res) => {
     ? (geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null)
     : existing.geo_corners;
 
+  let effLat = geo_lat !== undefined ? parseFloat(geo_lat) : existing.geo_lat;
+  let effLng = geo_lng !== undefined ? parseFloat(geo_lng) : existing.geo_lng;
+
+  if ((isNaN(effLat) || isNaN(effLng)) && geo_corners) {
+    try {
+      const parsed = typeof geo_corners === 'string' ? JSON.parse(geo_corners) : geo_corners;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        effLat = parsed.reduce((sum, p) => sum + parseFloat(p.lat), 0) / parsed.length;
+        effLng = parsed.reduce((sum, p) => sum + parseFloat(p.lng), 0) / parsed.length;
+      }
+    } catch {}
+  }
+
   db.prepare(`
     UPDATE saved_locations 
-    SET name = ?, type = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, is_default = COALESCE(?, is_default)
+    SET name = ?, description = COALESCE(?, description), type = ?, geo_lat = ?, geo_lng = ?, geo_radius_m = ?, geo_corners = ?, is_default = COALESCE(?, is_default), updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     name ? name.trim() : existing.name,
+    description !== undefined ? description.trim() : null,
     type || existing.type,
-    geo_lat !== undefined ? (geo_lat ? parseFloat(geo_lat) : null) : existing.geo_lat,
-    geo_lng !== undefined ? (geo_lng ? parseFloat(geo_lng) : null) : existing.geo_lng,
+    !isNaN(effLat) ? parseFloat(effLat.toFixed(6)) : existing.geo_lat,
+    !isNaN(effLng) ? parseFloat(effLng.toFixed(6)) : existing.geo_lng,
     geo_radius_m !== undefined ? parseInt(geo_radius_m, 10) : existing.geo_radius_m,
     cornersJson,
     is_default !== undefined ? (is_default ? 1 : 0) : null,

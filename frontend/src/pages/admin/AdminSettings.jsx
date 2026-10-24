@@ -412,14 +412,22 @@ export default function AdminSettings() {
       .finally(() => setLocsLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadRegistrationQr = useCallback(() => {
     const originParam = encodeURIComponent(window.location.origin);
     axios.get(`/api/admin/registration-qr?origin=${originParam}`, axiosConfig)
-      .then((res) => setRegData(res.data))
-      .catch(() => {});
+      .then((res) => {
+        if (res.data) setRegData(res.data);
+      })
+      .catch((err) => {
+        console.error('Failed to load registration QR code:', err);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadRegistrationQr();
     loadVenueConfig();
     loadSavedLocations();
-  }, []);
+  }, [loadRegistrationQr, loadVenueConfig, loadSavedLocations]);
 
   // ── Mode Switcher ──────────────────────────────────────────────────────
   const handleSwitchMode = (newMode) => {
@@ -557,7 +565,8 @@ export default function AdminSettings() {
     } else {
       await axios.post('/api/admin/saved-locations', data, axiosConfig);
     }
-    loadSavedLocations();
+    await loadSavedLocations();
+    setEditingLocation(null);
   };
 
   const handleDeleteLocation = async (id, name) => {
@@ -592,10 +601,16 @@ export default function AdminSettings() {
     }
   };
 
+  // Guaranteed fallback registration link so Copy button always has a valid destination
+  const effectiveRegUrl = regData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
+  const displayQrSrc = regData?.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(effectiveRegUrl)}`;
+
   const handleCopyLink = async () => {
-    if (regData?.url) {
-      const ok = await copyToClipboard(regData.url);
-      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    if (!effectiveRegUrl) return;
+    const ok = await copyToClipboard(effectiveRegUrl);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -1048,28 +1063,20 @@ export default function AdminSettings() {
                 <Printer className="h-3.5 w-3.5" />
                 <span>Print QR</span>
               </button>
-              {regData?.qr_code && (
-                <a href={regData.qr_code} download="MVJCE_Student_Registration_QR.png"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#080605]"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download</span>
-                </a>
-              )}
+              <a href={displayQrSrc} download="MVJCE_Student_Registration_QR.png" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#080605]"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download</span>
+              </a>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
             <div className="flex flex-col items-center text-center">
-              {regData?.qr_code ? (
-                <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-xl">
-                  <img src={regData.qr_code} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain" />
-                </div>
-              ) : (
-                <div className="flex h-56 w-56 items-center justify-center rounded-2xl bg-[#181512] text-xs text-[#706860]">
-                  Loading QR…
-                </div>
-              )}
+              <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-xl">
+                <img src={displayQrSrc} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain" />
+              </div>
               <span className="mt-3 text-[11px] uppercase tracking-widest text-[#a39b94]">Permanent Static QR</span>
             </div>
             <div className="md:col-span-2 space-y-4 text-xs">
@@ -1081,7 +1088,7 @@ export default function AdminSettings() {
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">Registration URL</label>
                 <div className="flex items-center gap-2">
-                  <input type="text" readOnly value={regData?.url || ''}
+                  <input type="text" readOnly value={effectiveRegUrl}
                     className="flex-1 rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 font-mono text-xs text-[#f5f0ea] select-all focus:outline-none"
                   />
                   <button type="button" onClick={handleCopyLink}

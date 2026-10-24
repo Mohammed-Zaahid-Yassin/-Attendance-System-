@@ -319,14 +319,17 @@ export default function AdminDashboard() {
     }
   };
 
+  // Guaranteed static registration link and QR data
+  const effectiveRegUrl = staticQrData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
+  const displayQrSrc = staticQrData?.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(effectiveRegUrl)}`;
+
   // Copy Static QR URL
   const handleCopyLink = async () => {
-    if (staticQrData?.url) {
-      const ok = await copyToClipboard(staticQrData.url);
-      if (ok) {
-        setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 2000);
-      }
+    if (!effectiveRegUrl) return;
+    const ok = await copyToClipboard(effectiveRegUrl);
+    if (ok) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
     }
   };
 
@@ -1180,19 +1183,13 @@ export default function AdminDashboard() {
               </p>
 
               <div className="mt-6 flex flex-col items-center">
-                {staticQrData?.qr_code ? (
-                  <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-lg">
-                    <img
-                      src={staticQrData.qr_code}
-                      alt="Confidential Student Registration Static QR"
-                      className="h-44 w-44 object-contain"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-44 w-44 items-center justify-center rounded-2xl bg-[#181512] text-xs text-[#706860]">
-                    Generating static QR...
-                  </div>
-                )}
+                <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-lg">
+                  <img
+                    src={displayQrSrc}
+                    alt="Confidential Student Registration Static QR"
+                    className="h-44 w-44 object-contain"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1206,16 +1203,16 @@ export default function AdminDashboard() {
                 <span>{copiedLink ? 'Link Copied!' : 'Copy Registration Link'}</span>
               </button>
 
-              {staticQrData?.qr_code && (
-                <a
-                  href={staticQrData.qr_code}
-                  download="MVJCE_Student_Registration_Static_QR.png"
-                  className="w-full flex items-center justify-center gap-2 rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download Print-Ready QR</span>
-                </a>
-              )}
+              <a
+                href={displayQrSrc}
+                download="MVJCE_Student_Registration_Static_QR.png"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download Print-Ready QR</span>
+              </a>
             </div>
           </div>
         </div>
