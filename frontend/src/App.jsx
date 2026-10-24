@@ -37,6 +37,8 @@ export default function App() {
 
         {/* Admin Authentication */}
         <Route path="/admin" element={<AdminLogin />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+
 
         {/* Admin Management Dashboard */}
         <Route
