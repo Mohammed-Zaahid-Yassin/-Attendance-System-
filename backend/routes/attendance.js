@@ -29,6 +29,7 @@ router.get('/token/current/:sessionId', (req, res) => {
     return res.status(500).json({ error: 'Failed to retrieve active token' });
   }
 
+  const isStatic = Boolean(Number(session.static_qr_mode) === 1 || session.static_qr_mode === true || session.static_qr_mode === '1' || currentToken.is_static === true);
   const serverNow = Date.now();
   return res.json({
     session_id: sessionId,
@@ -39,7 +40,8 @@ router.get('/token/current/:sessionId', (req, res) => {
     unique_pin: currentToken.unique_pin,
     pin_required: session.pin_required !== 0,
     geo_fence_enabled: session.geo_fence_enabled === 1,
-    static_qr_mode: session.static_qr_mode === 1,
+    static_qr_mode: isStatic,
+    is_static: isStatic,
     issued_at: currentToken.issued_at,
     expires_at: currentToken.expires_at,
     time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
@@ -98,6 +100,7 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       }
     });
 
+    const isStatic = Boolean(Number(session.static_qr_mode) === 1 || session.static_qr_mode === true || session.static_qr_mode === '1' || currentToken.is_static === true);
     const serverNow = Date.now();
     return res.json({
       session_id: sessionId,
@@ -107,7 +110,8 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       unique_pin: currentToken.unique_pin,
       pin_required: session.pin_required !== 0,
       geo_fence_enabled: session.geo_fence_enabled === 1,
-      static_qr_mode: session.static_qr_mode === 1,
+      static_qr_mode: isStatic,
+      is_static: isStatic,
       issued_at: currentToken.issued_at,
       expires_at: currentToken.expires_at,
       time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
@@ -137,8 +141,10 @@ router.get('/attendance/token-info', (req, res) => {
     return res.status(400).json({ error: 'Attendance session is no longer active' });
   }
 
+  const isStatic = Boolean(Number(session.static_qr_mode) === 1 || session.static_qr_mode === true || session.static_qr_mode === '1');
+
   // If not static QR mode, verify token has not expired
-  if (session.static_qr_mode !== 1 && tokenRow.expires_at < Date.now()) {
+  if (!isStatic && tokenRow.expires_at < Date.now()) {
     return res.status(400).json({ error: 'QR token has expired' });
   }
 
@@ -149,7 +155,7 @@ router.get('/attendance/token-info', (req, res) => {
     hour_number: session.hour_number,
     pin_required: session.pin_required !== 0,
     geo_fence_enabled: session.geo_fence_enabled === 1,
-    is_static_qr: session.static_qr_mode === 1
+    is_static_qr: isStatic
   });
 });
 
@@ -177,8 +183,9 @@ router.post('/attendance/mark', (req, res) => {
   }
 
   // 3. Expiration Check (bypassed if session is in Static QR Mode)
+  const isStatic = Boolean(Number(session.static_qr_mode) === 1 || session.static_qr_mode === true || session.static_qr_mode === '1');
   const now = Date.now();
-  if (session.static_qr_mode !== 1 && tokenRow.expires_at < now) {
+  if (!isStatic && tokenRow.expires_at < now) {
     return res.status(400).json({ error: 'This QR code token has expired (rotates every ~30s). Please scan the latest code on the auditorium screen.' });
   }
 

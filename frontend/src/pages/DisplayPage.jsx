@@ -348,12 +348,15 @@ export default function DisplayPage() {
 
       // Guard: reject stale response older than currently displayed token (dynamic mode only)
       const current = activeTokenRef.current;
-      if (current && data.expires_at < current.expires_at && !data.static_qr_mode && !current.static_qr_mode) {
+      const isDynamic = !data.static_qr_mode && !data.is_static && !current?.static_qr_mode && !current?.is_static;
+      if (current && data.expires_at < current.expires_at && isDynamic) {
         return;
       }
 
       // If token payload and mode have not changed, do NOT re-trigger state
-      if (current && data.token === current.token && data.static_qr_mode === current.static_qr_mode) {
+      const isNewStatic = Boolean(data.static_qr_mode || data.is_static);
+      const isCurrentStatic = Boolean(current?.static_qr_mode || current?.is_static);
+      if (current && data.token === current.token && isNewStatic === isCurrentStatic) {
         return;
       }
 
@@ -431,8 +434,10 @@ export default function DisplayPage() {
   const isStaticQr = Boolean(
     Number(currentSession?.static_qr_mode) === 1 ||
     currentSession?.static_qr_mode === true ||
+    currentSession?.static_qr_mode === '1' ||
     Number(tokenData?.static_qr_mode) === 1 ||
     tokenData?.static_qr_mode === true ||
+    tokenData?.static_qr_mode === '1' ||
     tokenData?.is_static === true
   );
 

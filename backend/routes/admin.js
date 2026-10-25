@@ -86,7 +86,12 @@ router.post('/sessions/start', (req, res) => {
   }
 
   try {
-    const isStaticQr = req.body.static_qr_mode ? 1 : 0;
+    const isStaticQr = (
+      req.body.static_qr_mode === 1 ||
+      req.body.static_qr_mode === '1' ||
+      req.body.static_qr_mode === true ||
+      req.body.static_qr_mode === 'true'
+    ) ? 1 : 0;
     const insertStmt = db.prepare(`
       INSERT INTO sessions (
         subject_name, subject_code, hour_number, started_by, 

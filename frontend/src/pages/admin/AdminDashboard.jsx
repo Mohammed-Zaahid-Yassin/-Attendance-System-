@@ -480,7 +480,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <a
-                          href="/display"
+                          href={`/display?session=${session.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-amber-400 hover:border-amber-500/50"
