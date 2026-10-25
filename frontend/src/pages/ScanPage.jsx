@@ -523,34 +523,46 @@ export default function ScanPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Student ID */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
+              <label htmlFor="student-id-input" className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
                 1. Student ID <span className="text-amber-500">*</span>
               </label>
               <input
+                id="student-id-input"
                 type="text"
                 required
-                placeholder="e.g. ARJU3210"
+                maxLength={20}
+                autoCapitalize="characters"
+                placeholder="E.g. ARJU3210"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value.toUpperCase())}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 font-mono text-base uppercase tracking-[0.12em] text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-sm sm:text-base font-medium leading-normal tracking-wide text-[#f5f0ea] placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
               />
+              <p className="mt-1.5 text-[11px] text-[#706860]">
+                First 4 letters of name (CAPITALS) + last 4 digits of mobile number.
+              </p>
             </div>
 
             {/* Screen PIN */}
             {isPinRequired && (
               <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
+                <label htmlFor="screen-pin-input" className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
                   2. Screen PIN <span className="text-amber-500">*</span>
                 </label>
                 <input
+                  id="screen-pin-input"
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   maxLength={6}
-                  placeholder="6-digit PIN from screen"
+                  placeholder="Enter 6-digit PIN"
                   value={uniquePin}
                   onChange={(e) => setUniquePin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3.5 text-center font-mono text-2xl font-bold tracking-[0.25em] text-amber-400 placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-sm sm:text-base font-medium leading-normal tracking-wide text-amber-400 placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
                 />
+                <p className="mt-1.5 text-[11px] text-[#706860]">
+                  Enter the 6-digit PIN currently displayed on the auditorium screen.
+                </p>
               </div>
             )}
 

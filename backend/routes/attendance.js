@@ -29,6 +29,7 @@ router.get('/token/current/:sessionId', (req, res) => {
     return res.status(500).json({ error: 'Failed to retrieve active token' });
   }
 
+  const serverNow = Date.now();
   return res.json({
     session_id: sessionId,
     subject_name: session.subject_name,
@@ -38,8 +39,11 @@ router.get('/token/current/:sessionId', (req, res) => {
     unique_pin: currentToken.unique_pin,
     pin_required: session.pin_required !== 0,
     geo_fence_enabled: session.geo_fence_enabled === 1,
+    issued_at: currentToken.issued_at,
     expires_at: currentToken.expires_at,
-    time_remaining_ms: currentToken.time_remaining_ms
+    time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
+    duration_ms: currentToken.duration_ms || 30000,
+    server_time: serverNow
   });
 });
 
@@ -93,6 +97,7 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       }
     });
 
+    const serverNow = Date.now();
     return res.json({
       session_id: sessionId,
       subject_name: session.subject_name,
@@ -101,8 +106,11 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       unique_pin: currentToken.unique_pin,
       pin_required: session.pin_required !== 0,
       geo_fence_enabled: session.geo_fence_enabled === 1,
+      issued_at: currentToken.issued_at,
       expires_at: currentToken.expires_at,
-      time_remaining_ms: currentToken.time_remaining_ms,
+      time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
+      duration_ms: currentToken.duration_ms || 30000,
+      server_time: serverNow,
       qr_code: qrDataUrl,
       scan_url: scanUrl
     });

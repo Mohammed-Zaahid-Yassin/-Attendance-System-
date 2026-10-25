@@ -38,17 +38,19 @@ function generateTokenForSession(sessionId) {
   const baseValidityMs = 30000;
   const randomDelayMs = Math.floor(Math.random() * 5001); // 0 to 5000 ms
   const totalDurationMs = baseValidityMs + randomDelayMs;
-  const expiresAt = Date.now() + totalDurationMs;
+  const now = Date.now();
+  const expiresAt = now + totalDurationMs;
 
   const insertStmt = db.prepare(`
-    INSERT INTO qr_tokens (session_id, token, unique_pin, expires_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO qr_tokens (session_id, token, unique_pin, expires_at, duration_ms, issued_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  insertStmt.run(sessionId, token, pin, expiresAt);
+  insertStmt.run(sessionId, token, pin, expiresAt, totalDurationMs, now);
 
   return { 
     token, 
     unique_pin: pin, 
+    issued_at: now,
     expires_at: expiresAt,
     duration_ms: totalDurationMs
   };
@@ -58,15 +60,19 @@ function generateTokenForSession(sessionId) {
 function getCurrentToken(sessionId) {
   const now = Date.now();
   const tokenRow = db.prepare(`
-    SELECT token, unique_pin, expires_at 
+    SELECT token, unique_pin, expires_at, duration_ms, issued_at 
     FROM qr_tokens 
     WHERE session_id = ? AND expires_at > ? 
     ORDER BY id DESC LIMIT 1
   `).get(sessionId, now);
 
   if (tokenRow) {
+    const duration = tokenRow.duration_ms || 30000;
+    const issuedAt = tokenRow.issued_at || (tokenRow.expires_at - duration);
     return {
       ...tokenRow,
+      issued_at: issuedAt,
+      duration_ms: duration,
       time_remaining_ms: Math.max(0, tokenRow.expires_at - now)
     };
   }

@@ -309,6 +309,11 @@ export default function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
               </div>
             )}
 
+            {/* Student ID Reminder */}
+            <div className="mt-2.5 rounded-xl border border-amber-500/25 bg-gradient-to-r from-amber-500/10 to-amber-600/5 px-3.5 py-2 text-center text-xs text-amber-200/90 shadow-sm">
+              <span className="font-semibold text-amber-400">Student ID Reminder:</span> First 4 letters of your name (CAPITALS) + last 4 digits of your mobile number (e.g., <span className="font-mono font-bold text-[#f5f0ea]">ARJU3210</span>).
+            </div>
+
             {/* Controls Row */}
             <div className="mt-3 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-2.5">
               {/* Zoom buttons */}

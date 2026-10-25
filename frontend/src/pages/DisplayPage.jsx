@@ -12,34 +12,69 @@ import {
 /**
  * ClockRingTimer — High-contrast circular progress countdown outline surrounding the QR code.
  *
- * Designed specifically for high visibility from a distance on auditorium and classroom projectors:
- * - High-contrast vibrant orange progress arc (#f97316 / #fb923c)
- * - Clear, high-visibility track (rgba(255, 235, 215, 0.22))
- * - Glowing circular endpoint bead following the progress tip
- * - Sized outside the QR square so the white card corners never occlude the ring
- * - Server-synced via expiresAt with rAF loop and visibility recovery
+ * Implements authoritative server-timestamp progress calculation:
+ * - t_i: token issuance time (issuedAt)
+ * - t_e: token expiration time (expiresAt)
+ * - t_n: current time adjusted by server clock skew (Date.now() + serverTimeOffset)
+ * - p = clamp((t_n - t_i) / (t_e - t_i), 0, 1)
+ * - remaining ms = max(0, t_e - t_n)
+ *
+ * Visual geometry:
+ * - Clock sweep begins at 12 o'clock (-90°).
+ * - Circular endpoint bead travels clockwise along circumference at angle -90° + p * 360°.
+ * - High-contrast orange progress arc extends from the moving bead clockwise to 12 o'clock.
+ * - Visible arc length is exactly C * (1 - p).
+ * - Bead and arc are mathematically unified: the bead is always attached to the arc tip.
+ * - Normal: vibrant orange (#f97316).
+ * - Last 6 seconds: warning amber (#f59e0b).
+ * - Expired: distinct red (#ef4444) with bead hidden.
  */
-function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
+export function ClockRingTimer({ issuedAt, expiresAt, serverTimeOffset = 0, size = 460, onExpire }) {
   const rafRef = useRef(null);
-  const [progress, setProgress] = useState(1); // 1 = full, 0 = expired
+  const expiredNotifiedRef = useRef(false);
+
+  const computeState = useCallback(() => {
+    const now = Date.now() + (serverTimeOffset || 0);
+    const ti = issuedAt || (expiresAt - 30000);
+    const te = expiresAt;
+    const total = Math.max(1000, te - ti);
+    const p = Math.max(0, Math.min(1, (now - ti) / total));
+    const r = Math.max(0, te - now);
+    return { progress: p, remainingMs: r };
+  }, [issuedAt, expiresAt, serverTimeOffset]);
+
+  const [state, setState] = useState(computeState);
 
   const tick = useCallback(() => {
-    const now = Date.now();
-    const remaining = Math.max(0, expiresAt - now);
-    const p = Math.max(0, Math.min(1, remaining / totalMs));
-    setProgress(p);
-    if (remaining > 0) {
+    const s = computeState();
+    setState(s);
+
+    if (s.remainingMs <= 0 && !expiredNotifiedRef.current) {
+      expiredNotifiedRef.current = true;
+      if (onExpire) onExpire();
+    }
+
+    if (s.remainingMs > 0) {
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [expiresAt, totalMs]);
+  }, [computeState, onExpire]);
 
   useEffect(() => {
+    expiredNotifiedRef.current = false;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        tick();
+        const s = computeState();
+        setState(s);
+        if (s.remainingMs > 0) {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          rafRef.current = requestAnimationFrame(tick);
+        } else if (!expiredNotifiedRef.current) {
+          expiredNotifiedRef.current = true;
+          if (onExpire) onExpire();
+        }
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -48,26 +83,38 @@ function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [tick]);
+  }, [tick, computeState, onExpire]);
 
+  const { progress, remainingMs } = state;
   const strokeWidth = 9;
   const radius = Math.max(20, size / 2 - strokeWidth - 6);
   const cx = size / 2;
   const cy = size / 2;
   const circumference = 2 * Math.PI * radius;
-  // Sweep: starts at 12 o'clock (-90°), sweeps clockwise as time elapses
-  const dashOffset = circumference * (1 - progress);
 
-  // Endpoint bead at current angle
-  const angle = (1 - progress) * 2 * Math.PI - Math.PI / 2;
-  const beadX = cx + radius * Math.cos(angle);
-  const beadY = cy + radius * Math.sin(angle);
+  // Clockwise countdown:
+  // As progress goes from 0 to 1, the bead moves clockwise from 12 o'clock (-90°):
+  const angleDeg = -90 + progress * 360;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const beadX = cx + radius * Math.cos(angleRad);
+  const beadY = cy + radius * Math.sin(angleRad);
 
-  // Color warning shift when under 25% remaining time
-  const isLow = progress < 0.25;
-  const ringColor = isLow ? '#ef4444' : '#f97316';
-  const trackColor = isLow ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 235, 215, 0.22)';
-  const beadGlow = isLow ? 'rgba(239, 68, 68, 0.45)' : 'rgba(249, 115, 22, 0.45)';
+  // Arc starts at the bead (at angleDeg) and extends clockwise to 12 o'clock:
+  // Visible arc length is C * (1 - progress).
+  // With SVG strokeDasharray = [C, C] and strokeDashoffset = C * progress,
+  // rotated by angleDeg: the visible dash begins at angleDeg and ends at -90° (12 o'clock).
+  const dashOffset = circumference * progress;
+
+  // Color logic:
+  const isExpired = remainingMs <= 0 || progress >= 1;
+  const isLow = remainingMs > 0 && remainingMs <= 6000;
+  const ringColor = isExpired ? '#ef4444' : isLow ? '#f59e0b' : '#f97316';
+  const trackColor = isExpired
+    ? 'rgba(239, 68, 68, 0.20)'
+    : isLow
+    ? 'rgba(245, 158, 11, 0.22)'
+    : 'rgba(255, 235, 215, 0.22)';
+  const beadGlow = isLow ? 'rgba(245, 158, 11, 0.45)' : 'rgba(249, 115, 22, 0.45)';
 
   return (
     <svg
@@ -81,7 +128,7 @@ function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
         pointerEvents: 'none',
         zIndex: 5
       }}
-      aria-hidden="true"
+      aria-label="QR validity countdown ring"
     >
       <defs>
         <filter id="timerGlow" x="-20%" y="-20%" width="140%" height="140%">
@@ -96,7 +143,7 @@ function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
         cy={cy}
         r={radius + strokeWidth / 2 + 1}
         fill="none"
-        stroke="rgba(245, 158, 11, 0.08)"
+        stroke={isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.08)'}
         strokeWidth={1}
       />
 
@@ -110,26 +157,36 @@ function ClockRingTimer({ expiresAt, totalMs, size = 460 }) {
         strokeWidth={strokeWidth}
       />
 
-      {/* Active High-Contrast Progress Arc */}
+      {/* 12 o'clock origin/target anchor marker */}
       <circle
         cx={cx}
-        cy={cy}
-        r={radius}
-        fill="none"
-        stroke={ringColor}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={dashOffset}
-        transform={`rotate(-90 ${cx} ${cy})`}
-        style={{
-          filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.5))',
-          transition: 'stroke 0.4s ease'
-        }}
+        cy={cy - radius}
+        r={3}
+        fill={isExpired ? '#ef4444' : 'rgba(255, 235, 215, 0.45)'}
       />
 
+      {/* Active High-Contrast Progress Arc */}
+      {!isExpired && progress < 1 && (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={radius}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+          transform={`rotate(${angleDeg} ${cx} ${cy})`}
+          style={{
+            filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.5))',
+            transition: 'stroke 0.3s ease'
+          }}
+        />
+      )}
+
       {/* Moving Circular Endpoint Bead Indicator */}
-      {progress > 0 && (
+      {!isExpired && progress < 1 && (
         <g>
           {/* Outer glow ring */}
           <circle cx={beadX} cy={beadY} r={10} fill={beadGlow} />
@@ -163,6 +220,13 @@ export default function DisplayPage() {
   const [qrContainerSize, setQrContainerSize] = useState(320);
 
   const qrWrapRef = useRef(null);
+  const serverTimeOffsetRef = useRef(0);
+  const fetchingRef = useRef(false);
+  const activeTokenRef = useRef(null);
+
+  useEffect(() => {
+    activeTokenRef.current = tokenData;
+  }, [tokenData]);
 
   // ── Measure available space for QR and surrounding countdown ring ────
   useEffect(() => {
@@ -213,28 +277,55 @@ export default function DisplayPage() {
     return () => { isMounted = false; clearInterval(interval); };
   }, [sessionFromUrl]);
 
-  // ── 2. Poll QR token — server-synced timing ───────────────────────────
+  // ── 2. Poll QR token — synchronized state & rotation ──────────────────
+  const fetchToken = useCallback(async () => {
+    if (!selectedSessionId || fetchingRef.current) return;
+    fetchingRef.current = true;
+    try {
+      const originParam = encodeURIComponent(window.location.origin);
+      const [qrRes, liveRes] = await Promise.all([
+        axios.get(`/api/token/qr/${selectedSessionId}?origin=${originParam}`),
+        axios.get(`/api/attendance/live/${selectedSessionId}`)
+      ]);
+
+      const data = qrRes.data;
+      if (data && data.server_time) {
+        serverTimeOffsetRef.current = data.server_time - Date.now();
+      }
+
+      setLiveAttendanceCount(liveRes.data?.count || 0);
+
+      // Guard: reject stale response older than currently displayed token
+      const current = activeTokenRef.current;
+      if (current && data.expires_at < current.expires_at) {
+        return;
+      }
+
+      // If token payload has not changed, do NOT reset timer or re-trigger state
+      if (current && data.token === current.token) {
+        return;
+      }
+
+      // Authoritative coordinated transition: new token & timestamps
+      setTokenData(data);
+    } catch (err) {
+      console.error('Failed to fetch QR token', err);
+    } finally {
+      fetchingRef.current = false;
+    }
+  }, [selectedSessionId]);
+
   useEffect(() => {
     if (!selectedSessionId) return;
-
-    const fetchToken = async () => {
-      try {
-        const originParam = encodeURIComponent(window.location.origin);
-        const [qrRes, liveRes] = await Promise.all([
-          axios.get(`/api/token/qr/${selectedSessionId}?origin=${originParam}`),
-          axios.get(`/api/attendance/live/${selectedSessionId}`)
-        ]);
-        setTokenData(qrRes.data);
-        setLiveAttendanceCount(liveRes.data?.count || 0);
-      } catch (err) {
-        console.error('Failed to fetch QR token', err);
-      }
-    };
-
     fetchToken();
     const interval = setInterval(fetchToken, 2000);
     return () => clearInterval(interval);
-  }, [selectedSessionId]);
+  }, [selectedSessionId, fetchToken]);
+
+  // When countdown expires, immediately fetch next rotated token
+  const handleTokenExpire = useCallback(() => {
+    fetchToken();
+  }, [fetchToken]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -287,14 +378,6 @@ export default function DisplayPage() {
 
   const isPinRequired = tokenData?.pin_required !== false;
   const isStaticQr = currentSession?.static_qr_mode === 1;
-
-  // Derive server-accurate timer values
-  const expiresAt = tokenData?.expires_at ?? (Date.now() + 30000);
-  // Time the token was ISSUED (expires_at - time_remaining approximation using polled data)
-  // Use the time_remaining_ms from server; totalMs = the full window we infer
-  const totalMs = tokenData?.time_remaining_ms != null
-    ? (tokenData.expires_at - Date.now() + tokenData.time_remaining_ms)
-    : 33000; // Fallback: assume 33s mid-window default
 
   return (
     <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-6 select-none">
@@ -366,9 +449,12 @@ export default function DisplayPage() {
               {/* Clock ring SVG surrounding the QR code */}
               {!isStaticQr && tokenData?.expires_at && (
                 <ClockRingTimer
-                  expiresAt={expiresAt}
-                  totalMs={Math.max(totalMs, 5000)}
+                  key={tokenData.token}
+                  issuedAt={tokenData.issued_at}
+                  expiresAt={tokenData.expires_at}
+                  serverTimeOffset={serverTimeOffsetRef.current}
                   size={ringOuterSize}
+                  onExpire={handleTokenExpire}
                 />
               )}
 

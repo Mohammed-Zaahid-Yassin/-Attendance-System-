@@ -174,7 +174,7 @@ function initDb() {
   }
 
 
-  // QR Tokens Table (rotates every 18-20s)
+  // QR Tokens Table (rotates every 30-35s)
   db.exec(`
     CREATE TABLE IF NOT EXISTS qr_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,10 +182,26 @@ function initDb() {
       token TEXT UNIQUE NOT NULL,
       unique_pin TEXT NOT NULL,
       expires_at INTEGER NOT NULL,
+      duration_ms INTEGER DEFAULT 30000,
+      issued_at INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
     );
   `);
+
+  // Migrate qr_tokens if missing duration_ms or issued_at column
+  try {
+    const tokenCols = db.prepare(`PRAGMA table_info(qr_tokens)`).all().map(c => c.name);
+    if (!tokenCols.includes('duration_ms')) {
+      db.exec(`ALTER TABLE qr_tokens ADD COLUMN duration_ms INTEGER DEFAULT 30000`);
+    }
+    if (!tokenCols.includes('issued_at')) {
+      db.exec(`ALTER TABLE qr_tokens ADD COLUMN issued_at INTEGER DEFAULT 0`);
+      db.exec(`UPDATE qr_tokens SET issued_at = expires_at - duration_ms WHERE issued_at = 0 OR issued_at IS NULL`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration qr_tokens]', migErr);
+  }
 
   // Attendance Table (UNIQUE constraint per session and student_id prevents double-marking)
   db.exec(`
