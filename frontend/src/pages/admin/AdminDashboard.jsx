@@ -574,7 +574,7 @@ export default function AdminDashboard() {
                           <p className="text-[11px] text-[#a39b94]">
                             {isStaticQr
                               ? 'Frozen — QR not rotating on screen'
-                              : 'Dynamic — rotating every 20s'}
+                              : 'Dynamic — rotating every ~30s'}
                           </p>
                         </div>
 

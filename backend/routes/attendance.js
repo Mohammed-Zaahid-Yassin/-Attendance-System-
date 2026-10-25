@@ -164,7 +164,7 @@ router.post('/attendance/mark', (req, res) => {
 
   const now = Date.now();
   if (tokenRow.expires_at < now) {
-    return res.status(400).json({ error: 'This QR code token has expired (rotates every 20s). Please scan the latest code.' });
+    return res.status(400).json({ error: 'This QR code token has expired (rotates every ~30s). Please scan the latest code on the auditorium screen.' });
   }
 
   // 2. Validate Session

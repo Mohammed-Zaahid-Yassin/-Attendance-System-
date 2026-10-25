@@ -4,6 +4,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────
+   Design Tokens
+───────────────────────────────────────────────────── */
 :root {
   --bg: #080605;
   --surface: #120f0d;
@@ -15,16 +18,114 @@
   --line: rgba(255, 235, 215, 0.08);
 }
 
+/* ─────────────────────────────────────────────────────
+   Base & Cross-Browser Reset
+───────────────────────────────────────────────────── */
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent; /* Remove iOS tap flash */
+  }
+
+  html {
+    /* Smooth native scrolling on iOS/Android */
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    /* Prevent iOS font-size inflation when rotating */
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: #080605;
     color: #f5f0ea;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif;
     overflow-x: hidden;
+    /* Respect device safe-area insets (notches, home bar) */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    /* Improve text rendering across all browsers */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Prevent iOS double-tap zoom on buttons/inputs */
+  button,
+  input,
+  select,
+  textarea,
+  a {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Restore user-select for text inputs */
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* Prevent broken iOS input zoom (font must be >= 16px or we set it below) */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em); /* ≥16px stops iOS Safari from zooming in */
+    -webkit-appearance: none;  /* Uniform look on Safari/Chrome iOS */
+    appearance: none;
+  }
+
+  /* iOS Safari: prevent select element arrows from disappearing */
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a39b94' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2.25rem;
+  }
+
+  /* Normalize button across browsers */
+  button {
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+  }
+
+  /* Images: prevent overflow & broken images */
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* SVG sizing consistency */
+  svg {
+    display: block;
+    overflow: visible;
   }
 }
 
-/* Subtle custom scrollbar */
+/* ─────────────────────────────────────────────────────
+   Typography — cross-browser font stack fallbacks
+───────────────────────────────────────────────────── */
+.font-serif {
+  font-family: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+/* ─────────────────────────────────────────────────────
+   Custom Scrollbar (Webkit + Firefox)
+───────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -38,4 +139,92 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(240, 150, 80, 0.4);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 235, 215, 0.15) #080605;
+}
+
+/* ─────────────────────────────────────────────────────
+   Safe-Area / Notch Support (iPhone X+, Android foldables)
+───────────────────────────────────────────────────── */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ─────────────────────────────────────────────────────
+   Focus Styles — accessible across all browsers
+───────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(240, 150, 80, 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default Firefox dotted outline */
+button::-moz-focus-inner {
+  border: 0;
+}
+
+/* ─────────────────────────────────────────────────────
+   Overflow / Table Responsiveness
+───────────────────────────────────────────────────── */
+.table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─────────────────────────────────────────────────────
+   Animations — respect prefers-reduced-motion
+───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────
+   Utilities
+───────────────────────────────────────────────────── */
+/* Cross-browser gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #f09650 0%, #f5c842 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Cross-browser sticky positioning */
+.sticky-compat {
+  position: -webkit-sticky;
+  position: sticky;
+}
+
+/* Fix: prevent overflow on admin table in Firefox */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* ─────────────────────────────────────────────────────
+   Print Styles
+───────────────────────────────────────────────────── */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  nav, aside, button, .no-print {
+    display: none !important;
+  }
 }

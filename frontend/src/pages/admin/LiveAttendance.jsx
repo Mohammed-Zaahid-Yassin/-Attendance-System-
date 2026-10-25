@@ -451,14 +451,14 @@ export default function LiveAttendance() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="px-5 py-3.5 font-semibold">#</th>
-                  <th className="px-5 py-3.5 font-semibold">Student Name</th>
-                  <th className="px-5 py-3.5 font-semibold">Student ID</th>
-                  <th className="px-5 py-3.5 font-semibold">USN</th>
-                  <th className="px-5 py-3.5 font-semibold">Department / Cycle</th>
-                  <th className="px-5 py-3.5 font-semibold">Year</th>
-                  <th className="px-5 py-3.5 font-semibold">Time Marked</th>
-                  <th className="px-5 py-3.5 font-semibold">GPS Verified</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">#</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">Student Name</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">Student ID</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">USN</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">Department / Cycle</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">Year</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">Time Marked</th>
+                  <th className="px-5 py-3.5 font-semibold whitespace-nowrap">GPS Verified</th>
                   <th className="px-5 py-3.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
@@ -484,12 +484,19 @@ export default function LiveAttendance() {
                         {r.year === 1 && r.cycle ? `${r.cycle}` : r.department}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="rounded-full border border-[rgba(255,235,215,0.1)] px-2.5 py-0.5 text-[10px] font-mono text-[#a39b94]">
+                        <span className="rounded-full border border-[rgba(255,235,215,0.1)] px-2.5 py-0.5 text-[10px] font-mono text-[#a39b94] whitespace-nowrap">
                           Yr {r.year}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 font-mono text-[#a39b94]">
-                        {new Date(r.marked_at).toLocaleTimeString()}
+                        {(() => {
+                          // SQLite CURRENT_TIMESTAMP returns 'YYYY-MM-DD HH:MM:SS' in UTC without 'Z'.
+                          // Normalise to ISO 8601 so all browsers parse it as UTC.
+                          const raw = r.marked_at || '';
+                          const iso = raw.includes('T') ? raw : raw.replace(' ', 'T') + (raw.endsWith('Z') ? '' : 'Z');
+                          const d = new Date(iso);
+                          return isNaN(d) ? raw : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                        })()}
                       </td>
                       <td className="px-5 py-3.5">
                         {r.geo_verified ? (

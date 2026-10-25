@@ -535,7 +535,7 @@ export default function ScanPage() {
                 placeholder="E.g. ARJU3210"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value.toUpperCase())}
-                className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-sm sm:text-base font-medium leading-normal tracking-wide text-[#f5f0ea] placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
+                className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-base font-medium leading-normal tracking-wide text-[#f5f0ea] placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
               />
               <p className="mt-1.5 text-[11px] text-[#706860]">
                 First 4 letters of name (CAPITALS) + last 4 digits of mobile number.
@@ -558,7 +558,7 @@ export default function ScanPage() {
                   placeholder="Enter 6-digit PIN"
                   value={uniquePin}
                   onChange={(e) => setUniquePin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-sm sm:text-base font-medium leading-normal tracking-wide text-amber-400 placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
+                  className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-base font-medium leading-normal tracking-wide text-amber-400 placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
                 />
                 <p className="mt-1.5 text-[11px] text-[#706860]">
                   Enter the 6-digit PIN currently displayed on the auditorium screen.

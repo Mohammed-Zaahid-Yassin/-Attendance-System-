@@ -544,12 +544,41 @@ export default function DisplayPage() {
           </div>
         )}
 
-        {/* Student instruction */}
-        <p className="mt-6 text-center text-sm text-[#a39b94] max-w-md leading-relaxed">
-          Scan the QR code using your mobile camera
-          {isPinRequired ? ' and enter the screen PIN ' : ' '}
-          to mark attendance.
-        </p>
+        {/* Student instruction + Student ID reminder */}
+        <div className="mt-6 w-full max-w-md text-center space-y-3">
+          <p className="text-sm text-[#a39b94] leading-relaxed">
+            Scan the QR code using your mobile camera
+            {isPinRequired ? ' and enter the screen PIN ' : ' '}
+            to mark attendance.
+          </p>
+
+          {/* Prominent Student ID reminder */}
+          <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-gradient-to-r from-[#18130e] to-[#14100c] px-5 py-4 text-left shadow-lg">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">
+                ID
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-400">
+                  Your Student ID
+                </p>
+                <p className="mt-1 text-sm font-medium text-[#f5f0ea] leading-snug">
+                  First <span className="text-amber-400 font-bold">4 letters</span> of your name{' '}
+                  +{' '}
+                  Last <span className="text-amber-400 font-bold">4 digits</span> of your mobile number
+                </p>
+                <p className="mt-1.5 text-[11px] text-[#706860]">
+                  e.g.&nbsp;
+                  <span className="font-mono text-[#a39b94]">ARJUN</span>
+                  &nbsp;+&nbsp;
+                  <span className="font-mono text-[#a39b94]">98765<strong className="text-amber-400">3210</strong></span>
+                  &nbsp;→&nbsp;
+                  <span className="font-mono font-bold text-amber-400">ARJU3210</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
 
       <footer className="border-t border-[rgba(255,235,215,0.06)] pt-3 text-center text-[11px] text-[#706860]">

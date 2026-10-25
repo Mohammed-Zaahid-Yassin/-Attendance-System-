@@ -194,14 +194,14 @@ export default function StudentRoster() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="px-5 py-3.5 font-semibold">#</th>
-                  <th className="px-5 py-3.5 font-semibold">Student Name</th>
-                  <th className="px-5 py-3.5 font-semibold">Student ID</th>
-                  <th className="px-5 py-3.5 font-semibold">USN / Admission No</th>
-                  <th className="px-5 py-3.5 font-semibold">Department / Cycle</th>
-                  <th className="px-5 py-3.5 font-semibold">Year</th>
-                  <th className="px-5 py-3.5 font-semibold">Mobile</th>
-                  <th className="px-5 py-3.5 font-semibold text-right">Actions</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">#</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">Student Name</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">Student ID</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">USN / Admission No</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">Department / Cycle</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">Year</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap">Mobile</th>
+                  <th className="px-4 py-3.5 font-semibold whitespace-nowrap text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[rgba(255,235,215,0.06)] text-[#f5f0ea]">
@@ -230,7 +230,7 @@ export default function StudentRoster() {
                         {s.year === 1 && s.cycle ? `${s.cycle}` : s.department}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="rounded-full border border-[rgba(255,235,215,0.1)] px-2.5 py-0.5 text-[10px] font-mono text-[#a39b94]">
+                        <span className="rounded-full border border-[rgba(255,235,215,0.1)] px-2.5 py-0.5 text-[10px] font-mono text-[#a39b94] whitespace-nowrap">
                           Year {s.year}
                         </span>
                       </td>
