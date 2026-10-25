@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminLayout from '../../components/AdminLayout';
 import { Users, Search, Trash2, Filter, Edit2, X, Save } from 'lucide-react';
+import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS } from '../../utils/departments';
 
 export default function StudentRoster() {
   const [students, setStudents] = useState([]);
@@ -114,8 +115,6 @@ export default function StudentRoster() {
     }
   };
 
-  const departments = ['CSE', 'ISE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'AIML', 'AIDS', 'MBA', 'MCA'];
-
   return (
     <AdminLayout>
       <div className="max-w-7xl mx-auto space-y-6">
@@ -165,8 +164,14 @@ export default function StudentRoster() {
               className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
             >
               <option value="">All Departments</option>
-              {departments.map((d) => (
-                <option key={d} value={d}>{d}</option>
+              {MVJCE_SCHOOLS.map((school) => (
+                <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                  {school.departments.map((d) => (
+                    <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                      {d}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -359,8 +364,20 @@ export default function StudentRoster() {
                     onChange={(e) => setEditDept(e.target.value)}
                     className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
                   >
-                    {departments.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                    <option value="">Select Department...</option>
+                    {editDept && !ALL_MVJCE_DEPARTMENTS.includes(editDept) && (
+                      <option value={editDept} className="bg-[#181512] text-[#f5f0ea] font-semibold">
+                        {editDept} (Current)
+                      </option>
+                    )}
+                    {MVJCE_SCHOOLS.map((school) => (
+                      <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                        {school.departments.map((d) => (
+                          <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                            {d}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>

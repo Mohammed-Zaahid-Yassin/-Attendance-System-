@@ -455,9 +455,9 @@ router.get('/students', (req, res) => {
     params.push(parseInt(year, 10));
   }
 
-  if (department) {
-    query += ' AND department = ?';
-    params.push(department);
+  if (department && department !== 'ALL') {
+    query += ' AND (department = ? OR department LIKE ?)';
+    params.push(department, `%${department}%`);
   }
 
   query += ' ORDER BY id DESC';

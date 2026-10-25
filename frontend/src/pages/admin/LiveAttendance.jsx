@@ -18,6 +18,7 @@ import {
   X,
   Edit2
 } from 'lucide-react';
+import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS } from '../../utils/departments';
 
 // Helper to extract short department code or clean name
 export function getShortDept(dept) {
@@ -470,8 +471,14 @@ export default function LiveAttendance() {
                 className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
               >
                 <option value="ALL">All Departments</option>
-                {availableDepts.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                {MVJCE_SCHOOLS.map((school) => (
+                  <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                    {school.departments.map((d) => (
+                      <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                        {d}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

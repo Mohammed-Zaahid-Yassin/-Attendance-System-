@@ -11,54 +11,7 @@ import {
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 
-const MVJCE_SCHOOLS = [
-  {
-    school: 'School of Computer Science',
-    departments: [
-      'Computer Science and Engineering (CSE)',
-      'Information Science and Engineering (ISE)',
-      'Artificial Intelligence and Machine Learning (AI & ML)',
-      'Computer Science and Engineering - Data Science (CSE-DS)',
-      'Computer Science and Design (CS & Design)'
-    ]
-  },
-  {
-    school: 'School of Electrical Science',
-    departments: [
-      'Electronics and Communication Engineering (ECE)',
-      'Electrical and Electronics Engineering (EEE)',
-      'Electronics Engineering - VLSI Design and Technology',
-      'Electronics and Communication - Advanced Communication Technology',
-      'Industrial IoT'
-    ]
-  },
-  {
-    school: 'School of Mechanical Science & Civil Science',
-    departments: [
-      'Aeronautical Engineering',
-      'Aerospace Engineering',
-      'Mechanical Engineering',
-      'Chemical Engineering',
-      'Civil Engineering'
-    ]
-  },
-  {
-    school: 'School of Basic Sciences',
-    departments: [
-      'Physics',
-      'Chemistry',
-      'Mathematics'
-    ]
-  },
-  {
-    school: 'School of Business',
-    departments: [
-      'Management Studies (MBA)'
-    ]
-  }
-];
-
-const MVJCE_DEPARTMENTS = MVJCE_SCHOOLS.flatMap((s) => s.departments);
+import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS as MVJCE_DEPARTMENTS } from '../utils/departments';
 
 export default function RegisterPage() {
   const [searchParams] = useSearchParams();
