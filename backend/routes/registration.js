@@ -143,11 +143,12 @@ router.get('/admin/registration-qr', adminAuth, async (req, res) => {
     // 3. x-forwarded-host header (when requests pass through Vercel's proxy rewrite)
     // 4. referer header origin (if present from browser request)
     // 5. Default production Vercel deployment URL
+    // The Static Student Registration QR code is permanent.
+    // It must ALWAYS encode the canonical production domain so it never changes or breaks.
     let frontendOrigin = (
-      req.query.origin ||
       process.env.FRONTEND_URL ||
+      (req.query.origin && !req.query.origin.includes('localhost') && !req.query.origin.includes('127.0.0.1') ? req.query.origin : '') ||
       (req.headers['x-forwarded-host'] ? `https://${req.headers['x-forwarded-host']}` : '') ||
-      (req.headers.referer ? new URL(req.headers.referer).origin : '') ||
       'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app'
     ).replace(/\/$/, '');
 

@@ -15,7 +15,7 @@ router.get('/token/current/:sessionId', (req, res) => {
     return res.status(400).json({ error: 'Invalid session ID' });
   }
 
-  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(sessionId);
+  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled, static_qr_mode FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -39,6 +39,7 @@ router.get('/token/current/:sessionId', (req, res) => {
     unique_pin: currentToken.unique_pin,
     pin_required: session.pin_required !== 0,
     geo_fence_enabled: session.geo_fence_enabled === 1,
+    static_qr_mode: session.static_qr_mode === 1,
     issued_at: currentToken.issued_at,
     expires_at: currentToken.expires_at,
     time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
@@ -54,7 +55,7 @@ router.get('/token/qr/:sessionId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid session ID' });
   }
 
-  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(sessionId);
+  const session = db.prepare('SELECT id, subject_name, subject_code, hour_number, is_active, pin_required, geo_fence_enabled, static_qr_mode FROM sessions WHERE id = ?').get(sessionId);
   if (!session || !session.is_active) {
     return res.status(400).json({ error: 'Session is inactive or not found' });
   }
@@ -106,6 +107,7 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       unique_pin: currentToken.unique_pin,
       pin_required: session.pin_required !== 0,
       geo_fence_enabled: session.geo_fence_enabled === 1,
+      static_qr_mode: session.static_qr_mode === 1,
       issued_at: currentToken.issued_at,
       expires_at: currentToken.expires_at,
       time_remaining_ms: Math.max(0, currentToken.expires_at - serverNow),
@@ -130,9 +132,14 @@ router.get('/attendance/token-info', (req, res) => {
     return res.status(404).json({ error: 'Invalid or expired QR token' });
   }
 
-  const session = db.prepare('SELECT id, subject_name, hour_number, is_active, pin_required, geo_fence_enabled FROM sessions WHERE id = ?').get(tokenRow.session_id);
+  const session = db.prepare('SELECT id, subject_name, hour_number, is_active, pin_required, geo_fence_enabled, static_qr_mode FROM sessions WHERE id = ?').get(tokenRow.session_id);
   if (!session || !session.is_active) {
     return res.status(400).json({ error: 'Attendance session is no longer active' });
+  }
+
+  // If not static QR mode, verify token has not expired
+  if (session.static_qr_mode !== 1 && tokenRow.expires_at < Date.now()) {
+    return res.status(400).json({ error: 'QR token has expired' });
   }
 
   return res.json({
@@ -141,7 +148,8 @@ router.get('/attendance/token-info', (req, res) => {
     subject_name: session.subject_name,
     hour_number: session.hour_number,
     pin_required: session.pin_required !== 0,
-    geo_fence_enabled: session.geo_fence_enabled === 1
+    geo_fence_enabled: session.geo_fence_enabled === 1,
+    is_static_qr: session.static_qr_mode === 1
   });
 });
 
@@ -162,15 +170,16 @@ router.post('/attendance/mark', (req, res) => {
     return res.status(400).json({ error: 'Invalid or expired QR code. Please scan the current code on the screen.' });
   }
 
-  const now = Date.now();
-  if (tokenRow.expires_at < now) {
-    return res.status(400).json({ error: 'This QR code token has expired (rotates every ~30s). Please scan the latest code on the auditorium screen.' });
-  }
-
   // 2. Validate Session
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(tokenRow.session_id);
   if (!session || session.is_active !== 1) {
     return res.status(400).json({ error: 'Attendance session is no longer active.' });
+  }
+
+  // 3. Expiration Check (bypassed if session is in Static QR Mode)
+  const now = Date.now();
+  if (session.static_qr_mode !== 1 && tokenRow.expires_at < now) {
+    return res.status(400).json({ error: 'This QR code token has expired (rotates every ~30s). Please scan the latest code on the auditorium screen.' });
   }
 
   // 3. Validate Unique PIN if required by session

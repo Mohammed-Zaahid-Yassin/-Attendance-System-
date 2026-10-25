@@ -273,6 +273,36 @@ router.patch('/sessions/:id/toggle-static-qr', (req, res) => {
   const currentMode = session.static_qr_mode !== 0 ? 1 : 0;
   const newMode = currentMode === 1 ? 0 : 1;
   db.prepare('UPDATE sessions SET static_qr_mode = ? WHERE id = ?').run(newMode, sessionId);
+
+  const now = Date.now();
+  if (newMode === 1) {
+    // FREEZE: extend current active token by 24 hours so it is completely locked/static
+    const latestToken = db.prepare(`
+      SELECT * FROM qr_tokens 
+      WHERE session_id = ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(sessionId);
+
+    if (latestToken) {
+      db.prepare('UPDATE qr_tokens SET expires_at = ?, duration_ms = ? WHERE id = ?')
+        .run(now + 86400000, 86400000, latestToken.id);
+    } else {
+      generateTokenForSession(sessionId, true);
+    }
+  } else {
+    // RESUME DYNAMIC: set the latest token to expire in standard 30s so rotation resumes cleanly
+    const latestToken = db.prepare(`
+      SELECT * FROM qr_tokens 
+      WHERE session_id = ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(sessionId);
+
+    if (latestToken) {
+      db.prepare('UPDATE qr_tokens SET expires_at = ?, duration_ms = ? WHERE id = ?')
+        .run(now + 30000, 30000, latestToken.id);
+    }
+  }
+
   const updated = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
 
   return res.json({

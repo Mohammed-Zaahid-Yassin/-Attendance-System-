@@ -401,3 +401,33 @@ test('Frontend Projector Display: ClockRingTimer exported and coordinates verifi
   // Verify broken totalMs formula was removed
   assert.ok(!content.includes('(tokenData.expires_at - Date.now() + tokenData.time_remaining_ms)'), 'Broken totalMs calculation must be removed');
 });
+
+test('Backend Static QR Mode: Does not rotate, token remains frozen and valid', () => {
+  // Create an active session in static QR mode
+  const res = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
+    VALUES ('Static Test Subject', 'STAT101', 1, 'admin', 1, 1, 1)
+  `).run();
+  const testSessionId = res.lastInsertRowid;
+
+  try {
+    const token1 = getCurrentToken(testSessionId);
+    assert.ok(token1, 'Must return a token for static session');
+    assert.equal(token1.is_static, true, 'Token must be marked as static');
+    assert.ok(token1.duration_ms >= 86400000, 'Static duration must be 24h');
+
+    // Subsequent retrieval must return the exact same token and PIN (frozen)
+    const token2 = getCurrentToken(testSessionId);
+    assert.equal(token2.token, token1.token, 'Static token must NOT rotate or change');
+    assert.equal(token2.unique_pin, token1.unique_pin, 'Static PIN must NOT rotate or change');
+
+    // Verify token expiration is far in future
+    const now = Date.now();
+    assert.ok(token2.expires_at > now + 3600000, 'Static token must expire at least 1h in future');
+  } finally {
+    // Cleanup test data
+    db.prepare('DELETE FROM qr_tokens WHERE session_id = ?').run(testSessionId);
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(testSessionId);
+  }
+});
+

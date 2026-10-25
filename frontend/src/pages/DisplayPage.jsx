@@ -346,14 +346,14 @@ export default function DisplayPage() {
 
       setLiveAttendanceCount(liveRes.data?.count || 0);
 
-      // Guard: reject stale response older than currently displayed token
+      // Guard: reject stale response older than currently displayed token (dynamic mode only)
       const current = activeTokenRef.current;
-      if (current && data.expires_at < current.expires_at) {
+      if (current && data.expires_at < current.expires_at && !data.static_qr_mode && !current.static_qr_mode) {
         return;
       }
 
-      // If token payload has not changed, do NOT reset timer or re-trigger state
-      if (current && data.token === current.token) {
+      // If token payload and mode have not changed, do NOT re-trigger state
+      if (current && data.token === current.token && data.static_qr_mode === current.static_qr_mode) {
         return;
       }
 
