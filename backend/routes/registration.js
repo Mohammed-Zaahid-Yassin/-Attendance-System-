@@ -149,12 +149,12 @@ router.get('/admin/registration-qr', adminAuth, async (req, res) => {
       process.env.FRONTEND_URL ||
       (req.query.origin && !req.query.origin.includes('localhost') && !req.query.origin.includes('127.0.0.1') ? req.query.origin : '') ||
       (req.headers['x-forwarded-host'] ? `https://${req.headers['x-forwarded-host']}` : '') ||
-      'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app'
+      'https://attendance-system-mvjce.vercel.app'
     ).replace(/\/$/, '');
 
     // Safeguard: if origin points to the Render backend service, rewrite to Vercel
     if (frontendOrigin.includes('onrender.com')) {
-      frontendOrigin = 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app';
+      frontendOrigin = 'https://attendance-system-mvjce.vercel.app';
     }
 
     const registrationUrl = `${frontendOrigin}/register?key=${encodeURIComponent(REGISTRATION_KEY)}`;

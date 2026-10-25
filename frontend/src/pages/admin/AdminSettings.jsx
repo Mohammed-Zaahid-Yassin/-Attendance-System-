@@ -602,7 +602,7 @@ export default function AdminSettings() {
   };
 
   // Guaranteed fallback registration link so Copy button always has a valid destination
-  const effectiveRegUrl = regData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
+  const effectiveRegUrl = regData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
   const displayQrSrc = regData?.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(effectiveRegUrl)}`;
 
   const handleCopyLink = async () => {

@@ -325,7 +325,7 @@ export default function AdminDashboard() {
   };
 
   // Guaranteed static registration link and QR data
-  const effectiveRegUrl = staticQrData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
+  const effectiveRegUrl = staticQrData?.url || (typeof window !== 'undefined' ? `${window.location.origin}/register?key=STATIC_REG_QR_KEY_SECRET_7890` : 'https://attendance-system-mvjce.vercel.app/register?key=STATIC_REG_QR_KEY_SECRET_7890');
   const displayQrSrc = staticQrData?.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(effectiveRegUrl)}`;
 
   // Copy Static QR URL

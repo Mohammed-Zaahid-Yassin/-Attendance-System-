@@ -79,12 +79,12 @@ router.get('/token/qr/:sessionId', async (req, res) => {
       process.env.FRONTEND_URL ||
       (req.headers['x-forwarded-host'] ? `https://${req.headers['x-forwarded-host']}` : '') ||
       (req.headers.referer ? new URL(req.headers.referer).origin : '') ||
-      'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app'
+      'https://attendance-system-mvjce.vercel.app'
     ).replace(/\/$/, '');
 
     // Safeguard: if origin points to the Render backend service, rewrite to Vercel
     if (frontendOrigin.includes('onrender.com')) {
-      frontendOrigin = 'https://attendance-system-mvjce-6rxahczaj-zaahid1.vercel.app';
+      frontendOrigin = 'https://attendance-system-mvjce.vercel.app';
     }
 
     // Target URL encoded in the QR code: points to student scan page with token
