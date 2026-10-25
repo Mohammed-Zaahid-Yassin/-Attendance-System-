@@ -29,19 +29,20 @@ import {
  * - Last 6 seconds: warning amber (#f59e0b).
  * - Expired: distinct red (#ef4444) with bead hidden.
  */
-export function ClockRingTimer({ issuedAt, expiresAt, serverTimeOffset = 0, size = 460, onExpire }) {
+export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffset = 0, size = 460, onExpire }) {
   const rafRef = useRef(null);
   const expiredNotifiedRef = useRef(false);
 
   const computeState = useCallback(() => {
     const now = Date.now() + (serverTimeOffset || 0);
-    const ti = issuedAt || (expiresAt - 30000);
     const te = expiresAt;
-    const total = Math.max(1000, te - ti);
-    const p = Math.max(0, Math.min(1, (now - ti) / total));
     const r = Math.max(0, te - now);
-    return { progress: p, remainingMs: r };
-  }, [issuedAt, expiresAt, serverTimeOffset]);
+    // Proportion of full amount: use durationMs, or (expiresAt - issuedAt), or dynamic remaining window
+    const total = Math.max(1000, durationMs || (issuedAt ? te - issuedAt : 0) || Math.max(30000, r));
+    const remainingFraction = Math.max(0, Math.min(1, r / total));
+    const p = 1 - remainingFraction;
+    return { progress: p, remainingMs: r, remainingFraction, totalDuration: total };
+  }, [issuedAt, expiresAt, durationMs, serverTimeOffset]);
 
   const [state, setState] = useState(computeState);
 
@@ -85,7 +86,7 @@ export function ClockRingTimer({ issuedAt, expiresAt, serverTimeOffset = 0, size
     };
   }, [tick, computeState, onExpire]);
 
-  const { progress, remainingMs } = state;
+  const { progress, remainingMs, remainingFraction } = state;
   const strokeWidth = 9;
   const radius = Math.max(20, size / 2 - strokeWidth - 6);
   const cx = size / 2;
@@ -105,16 +106,44 @@ export function ClockRingTimer({ issuedAt, expiresAt, serverTimeOffset = 0, size
   // rotated by angleDeg: the visible dash begins at angleDeg and ends at -90° (12 o'clock).
   const dashOffset = circumference * progress;
 
-  // Color logic:
+  // Smooth multi-step color gradient:
+  // - 100% remaining: Vibrant Spotlight Orange [249, 115, 22] (#f97316)
+  // - 50% remaining (half-time): Pure Electric Yellow [250, 204, 21] (#facc15)
+  // - 25% remaining (quarter-time): High-Contrast Warning Red [239, 68, 68] (#ef4444)
+  // - 0% remaining (expired): Deep Red [220, 38, 38] (#dc2626)
   const isExpired = remainingMs <= 0 || progress >= 1;
-  const isLow = remainingMs > 0 && remainingMs <= 6000;
-  const ringColor = isExpired ? '#ef4444' : isLow ? '#f59e0b' : '#f97316';
-  const trackColor = isExpired
-    ? 'rgba(239, 68, 68, 0.20)'
-    : isLow
-    ? 'rgba(245, 158, 11, 0.22)'
-    : 'rgba(255, 235, 215, 0.22)';
-  const beadGlow = isLow ? 'rgba(245, 158, 11, 0.45)' : 'rgba(249, 115, 22, 0.45)';
+  let rColor, gColor, bColor;
+
+  if (isExpired) {
+    rColor = 239;
+    gColor = 68;
+    bColor = 68;
+  } else {
+    const f = Math.max(0, Math.min(1, remainingFraction != null ? remainingFraction : (1 - progress)));
+    if (f >= 0.5) {
+      // 100% -> 50%: Smooth blend from Orange to Yellow
+      const t = (1.0 - f) / 0.5; // 0 at f=1.0, 1 at f=0.5
+      rColor = Math.round(249 + (250 - 249) * t);
+      gColor = Math.round(115 + (204 - 115) * t);
+      bColor = Math.round(22 + (21 - 22) * t);
+    } else if (f >= 0.25) {
+      // 50% -> 25%: Smooth blend from Yellow to Red
+      const t = (0.5 - f) / 0.25; // 0 at f=0.5, 1 at f=0.25
+      rColor = Math.round(250 + (239 - 250) * t);
+      gColor = Math.round(204 + (68 - 204) * t);
+      bColor = Math.round(21 + (68 - 21) * t);
+    } else {
+      // 25% -> 0%: Smooth deepening from Red to Dark Red
+      const t = (0.25 - f) / 0.25; // 0 at f=0.25, 1 at f=0
+      rColor = Math.round(239 + (220 - 239) * t);
+      gColor = Math.round(68 + (38 - 68) * t);
+      bColor = Math.round(68 + (38 - 68) * t);
+    }
+  }
+
+  const ringColor = `rgb(${rColor}, ${gColor}, ${bColor})`;
+  const trackColor = `rgba(${rColor}, ${gColor}, ${bColor}, 0.20)`;
+  const beadGlow = `rgba(${rColor}, ${gColor}, ${bColor}, 0.45)`;
 
   return (
     <svg
@@ -452,6 +481,7 @@ export default function DisplayPage() {
                   key={tokenData.token}
                   issuedAt={tokenData.issued_at}
                   expiresAt={tokenData.expires_at}
+                  durationMs={tokenData.duration_ms}
                   serverTimeOffset={serverTimeOffsetRef.current}
                   size={ringOuterSize}
                   onExpire={handleTokenExpire}

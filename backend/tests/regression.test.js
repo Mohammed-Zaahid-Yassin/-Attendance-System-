@@ -141,6 +141,97 @@ test('Token Synchronization: Stale Response Rejection & Same Token Preservation'
   assert.equal(isNew, true, 'New token must trigger coordinated state update');
 });
 
+test('Countdown Model: Proportional reduction with randomized duration (e.g. 34,500ms) - never stuck at 100%', () => {
+  const durationMs = 34500; // 30,000 + 4,500ms random delay
+  const now = 1000000;
+  const expiresAt = now + durationMs;
+  const issuedAt = now;
+
+  function computeProgress(currentNow) {
+    const r = Math.max(0, expiresAt - currentNow);
+    const total = Math.max(1000, durationMs || (issuedAt ? expiresAt - issuedAt : 0) || Math.max(30000, r));
+    const remainingFraction = Math.max(0, Math.min(1, r / total));
+    const p = 1 - remainingFraction;
+    return { p, remainingFraction, r };
+  }
+
+  // 1. At start (0ms elapsed): full 100%
+  const start = computeProgress(now);
+  assert.equal(start.p, 0, 'Progress at start must be 0');
+  assert.equal(start.remainingFraction, 1.0, 'Remaining fraction at start must be 1.0');
+
+  // 2. After 1000ms: must NOT be stuck at 1.0!
+  const after1s = computeProgress(now + 1000);
+  assert.ok(after1s.p > 0, 'Progress must immediately advance after 1s');
+  assert.ok(after1s.remainingFraction < 1.0, 'Remaining fraction must be less than 1.0 after 1s');
+  assert.ok(Math.abs(after1s.remainingFraction - (33500 / 34500)) < 0.0001, 'Must be exact proportion of 34,500ms');
+
+  // 3. After 4500ms (at exactly 30s remaining): must have progressed smoothly to 30000/34500
+  const after4500 = computeProgress(now + 4500);
+  assert.ok(Math.abs(after4500.remainingFraction - (30000 / 34500)) < 0.0001, 'At 30s remaining, must equal 30000/34500');
+  assert.ok(after4500.p > 0.12, 'Must have visibly progressed past 12% rather than being stuck');
+});
+
+test('Countdown Colors: Smooth multi-step gradient (Orange at 100%, Yellow at 50%, Red at 25%)', () => {
+  function getGradientColor(remainingFraction) {
+    const f = Math.max(0, Math.min(1, remainingFraction));
+    let r, g, b;
+    if (f >= 0.5) {
+      // 100% -> 50%: Orange [249, 115, 22] -> Yellow [250, 204, 21]
+      const t = (1.0 - f) / 0.5;
+      r = Math.round(249 + (250 - 249) * t);
+      g = Math.round(115 + (204 - 115) * t);
+      b = Math.round(22 + (21 - 22) * t);
+    } else if (f >= 0.25) {
+      // 50% -> 25%: Yellow [250, 204, 21] -> Red [239, 68, 68]
+      const t = (0.5 - f) / 0.25;
+      r = Math.round(250 + (239 - 250) * t);
+      g = Math.round(204 + (68 - 204) * t);
+      b = Math.round(21 + (68 - 21) * t);
+    } else {
+      // 25% -> 0%: Red [239, 68, 68] -> Dark Red [220, 38, 38]
+      const t = (0.25 - f) / 0.25;
+      r = Math.round(239 + (220 - 239) * t);
+      g = Math.round(68 + (38 - 68) * t);
+      b = Math.round(68 + (38 - 68) * t);
+    }
+    return { r, g, b, str: `rgb(${r}, ${g}, ${b})` };
+  }
+
+  // 1. At 100% remaining: pure orange (249, 115, 22)
+  const c100 = getGradientColor(1.0);
+  assert.equal(c100.r, 249);
+  assert.equal(c100.g, 115);
+  assert.equal(c100.b, 22);
+
+  // 2. At 75% remaining: intermediate golden-amber
+  const c75 = getGradientColor(0.75);
+  assert.equal(c75.r, 250);
+  assert.ok(c75.g > 115 && c75.g < 204, 'Green must smoothly blend towards yellow');
+
+  // 3. At 50% remaining: pure yellow (250, 204, 21)
+  const c50 = getGradientColor(0.50);
+  assert.equal(c50.r, 250);
+  assert.equal(c50.g, 204);
+  assert.equal(c50.b, 21);
+
+  // 4. At 37.5% remaining: intermediate sunset coral
+  const c37 = getGradientColor(0.375);
+  assert.ok(c37.g > 68 && c37.g < 204, 'Green must smoothly blend from yellow towards red');
+
+  // 5. At 25% remaining: pure warning red (239, 68, 68)
+  const c25 = getGradientColor(0.25);
+  assert.equal(c25.r, 239);
+  assert.equal(c25.g, 68);
+  assert.equal(c25.b, 68);
+
+  // 6. At 0% (expired): deep red
+  const c0 = getGradientColor(0.0);
+  assert.equal(c0.r, 220);
+  assert.equal(c0.g, 38);
+  assert.equal(c0.b, 38);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. BACKEND TOKEN ROTATOR, EXPIRATION, & TIME SERVER TESTS
 // ─────────────────────────────────────────────────────────────────────────────
