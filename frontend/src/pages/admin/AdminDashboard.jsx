@@ -31,6 +31,7 @@ export default function AdminDashboard() {
   const [hourNumber, setHourNumber] = useState('1');
   const [geoEnabled, setGeoEnabled] = useState(false);
   const [pinRequired, setPinRequired] = useState(true);
+  const [startStaticQr, setStartStaticQr] = useState(false);
 
   // Saved Locations for Geofencing (Choose from 4-5 preset locations or custom map)
   const [savedLocations, setSavedLocations] = useState([]);
@@ -153,7 +154,8 @@ export default function AdminDashboard() {
         subject_code: subjectCode.trim(),
         hour_number: parseInt(hourNumber, 10),
         geo_fence_enabled: geoEnabled ? 1 : 0,
-        pin_required: pinRequired
+        pin_required: pinRequired,
+        static_qr_mode: startStaticQr ? 1 : 0
       };
 
       if (geoEnabled) {
@@ -228,7 +230,10 @@ export default function AdminDashboard() {
   // Toggle 3: On-the-fly Static QR Mode Toggle
   const handleToggleStaticQr = async (session) => {
     try {
-      await axios.patch(`/api/admin/sessions/${session.id}/toggle-static-qr`, {}, axiosConfig);
+      const isCurrentlyStatic = Number(session.static_qr_mode) === 1 || session.static_qr_mode === true;
+      await axios.patch(`/api/admin/sessions/${session.id}/toggle-static-qr`, {
+        enabled: !isCurrentlyStatic
+      }, axiosConfig);
       fetchStatsAndSessions();
     } catch (err) {
       alert('Error toggling static QR mode: ' + (err.response?.data?.error || err.message));
@@ -411,7 +416,7 @@ export default function AdminDashboard() {
               Anti-Proxy Cycle
             </div>
             <div className="mt-2 font-mono text-2xl font-bold text-[#f5f0ea]">
-              20 Seconds
+              30 Seconds
             </div>
             <p className="mt-1 text-[11px] text-[#706860]">
               Dynamic token & PIN rotation
@@ -439,7 +444,7 @@ export default function AdminDashboard() {
               {activeSessions.map((session) => {
                 const isGeoOn = session.geo_fence_enabled === 1;
                 const isPinOn = session.pin_required !== 0;
-                const isStaticQr = session.static_qr_mode === 1;
+                const isStaticQr = Number(session.static_qr_mode) === 1 || session.static_qr_mode === true;
 
                 return (
                   <div
@@ -978,7 +983,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* Security Toggles for New Session */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 {/* Geofence Checkbox */}
                 <label className="flex items-center gap-3 rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 cursor-pointer">
                   <input
@@ -1004,6 +1009,20 @@ export default function AdminDashboard() {
                   <div>
                     <span className="text-xs font-semibold text-[#f5f0ea]">Require Screen PIN</span>
                     <p className="text-[11px] text-[#706860]">Students must enter the rotating 6-digit key</p>
+                  </div>
+                </label>
+
+                {/* Static QR Checkbox */}
+                <label className="flex items-center gap-3 rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={startStaticQr}
+                    onChange={(e) => setStartStaticQr(e.target.checked)}
+                    className="h-4 w-4 rounded accent-amber-500"
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-[#f5f0ea]">Static QR Mode</span>
+                    <p className="text-[11px] text-[#706860]">Frozen QR & PIN (no 30s rotation)</p>
                   </div>
                 </label>
               </div>

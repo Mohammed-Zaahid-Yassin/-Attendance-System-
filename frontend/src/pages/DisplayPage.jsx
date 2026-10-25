@@ -428,7 +428,13 @@ export default function DisplayPage() {
   }
 
   const isPinRequired = tokenData?.pin_required !== false;
-  const isStaticQr = currentSession?.static_qr_mode === 1;
+  const isStaticQr = Boolean(
+    Number(currentSession?.static_qr_mode) === 1 ||
+    currentSession?.static_qr_mode === true ||
+    Number(tokenData?.static_qr_mode) === 1 ||
+    tokenData?.static_qr_mode === true ||
+    tokenData?.is_static === true
+  );
 
   return (
     <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-6 select-none">

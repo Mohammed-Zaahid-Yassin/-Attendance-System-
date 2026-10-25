@@ -86,12 +86,13 @@ router.post('/sessions/start', (req, res) => {
   }
 
   try {
+    const isStaticQr = req.body.static_qr_mode ? 1 : 0;
     const insertStmt = db.prepare(`
       INSERT INTO sessions (
         subject_name, subject_code, hour_number, started_by, 
-        geo_fence_enabled, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, pin_required
+        geo_fence_enabled, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, pin_required, static_qr_mode
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insertStmt.run(
@@ -105,11 +106,12 @@ router.post('/sessions/start', (req, res) => {
       radius,
       cornersJson,
       req.body.geo_type === 'polygon' ? 'polygon' : 'circle',
-      isPinRequired
+      isPinRequired,
+      isStaticQr
     );
 
     const sessionId = result.lastInsertRowid;
-    generateTokenForSession(sessionId);
+    generateTokenForSession(sessionId, isStaticQr === 1);
 
     const newSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
     return res.status(201).json({ success: true, session: newSession });
@@ -270,8 +272,15 @@ router.patch('/sessions/:id/toggle-static-qr', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  const currentMode = session.static_qr_mode !== 0 ? 1 : 0;
-  const newMode = currentMode === 1 ? 0 : 1;
+  const isCurrentlyStatic = Number(session.static_qr_mode) === 1;
+  let newMode;
+  if (req.body && req.body.enabled !== undefined) {
+    newMode = req.body.enabled ? 1 : 0;
+  } else if (req.body && req.body.static_qr_mode !== undefined) {
+    newMode = req.body.static_qr_mode ? 1 : 0;
+  } else {
+    newMode = isCurrentlyStatic ? 0 : 1;
+  }
   db.prepare('UPDATE sessions SET static_qr_mode = ? WHERE id = ?').run(newMode, sessionId);
 
   const now = Date.now();

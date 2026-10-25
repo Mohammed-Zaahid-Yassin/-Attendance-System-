@@ -25,7 +25,7 @@ The front-end is crafted to match the visual language of `spotlight.webbywasp.co
 | **QR Scanner** | **html5-qrcode** | HTML5 WebRTC camera APIs for mobile scanning |
 | **Backend Runtime** | **Node.js + Express.js** | Modular REST API with production static file serving |
 | **Database & Cache** | **SQLite (`better-sqlite3`)** | WAL mode, 64MB RAM cache, synchronous NORMAL, composite indexing |
-| **Cron Engine** | **node-cron** | 19-20 second loop rotating dynamic anti-proxy QR tokens and 6-digit PINs |
+| **Cron Engine** | **node-cron** | 30-35 second loop rotating dynamic anti-proxy QR tokens and 6-digit PINs |
 | **Geofence Engine** | **Point-in-Polygon** | 4-corner auditorium boundary coordinates via Ray-Casting & Haversine |
 | **Containerization** | **Multi-stage Docker** | Multi-stage builder + runtime container ready for AWS EC2/ECS/App Runner |
 
@@ -54,16 +54,16 @@ The front-end is crafted to match the visual language of `spotlight.webbywasp.co
   1. **Student ID** (with prominent hint: *First 4 letters of your Name in CAPITAL + Last 4 digits of Mobile*).
   2. **6-Digit PIN** (conditionally enforced based on admin toggle).
 - **Anti-Proxy Protection**:
-  - Dynamic QR rotating every 20 seconds.
+  - Dynamic QR rotating every ~30 seconds (or frozen in Static QR Mode).
   - Paired 6-digit screen PIN.
   - GPS Geofence validation (checks against auditorium polygon if enabled).
   - Database-enforced `UNIQUE(session_id, student_id)` prevents repeat or proxy submissions.
 
 ### 3. Auditorium Projector Screen (`/display`)
 - High-contrast screen designed for auditorium projectors.
-- High-resolution dynamic QR code updating every 20 seconds.
+- High-resolution dynamic QR code updating every ~30 seconds (or frozen in Static QR mode).
 - Large 6-digit screen PIN.
-- 20-second visual countdown timer progress bar.
+- Smooth countdown ring timer with multi-step color gradient (orange to yellow to red).
 - Real-time live attendance headcount updating via live polling.
 - Fullscreen toggle button.
 
