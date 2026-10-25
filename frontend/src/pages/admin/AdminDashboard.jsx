@@ -984,47 +984,112 @@ export default function AdminDashboard() {
 
               {/* Security Toggles for New Session */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                {/* Geofence Checkbox */}
-                <label className="flex items-center gap-3 rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={geoEnabled}
-                    onChange={(e) => setGeoEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded accent-amber-500"
-                  />
-                  <div>
-                    <span className="text-xs font-semibold text-[#f5f0ea]">Enable GPS Geofence</span>
-                    <p className="text-[11px] text-[#706860]">Validate coordinates against chosen venue preset or map</p>
+                {/* Geofence Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setGeoEnabled((prev) => !prev)}
+                  className={`flex items-center justify-between text-left rounded-xl border p-4 transition cursor-pointer select-none ${
+                    geoEnabled
+                      ? 'border-amber-500/50 bg-amber-500/10 shadow-amber-glow'
+                      : 'border-[rgba(255,235,215,0.08)] bg-[#181512] hover:border-[rgba(255,235,215,0.2)]'
+                  }`}
+                >
+                  <div className="space-y-0.5 pr-2">
+                    <span className="text-xs font-semibold text-[#f5f0ea] block">
+                      Enable GPS Geofence
+                    </span>
+                    <p className="text-[11px] text-[#706860]">
+                      Validate coordinates against chosen venue preset
+                    </p>
                   </div>
-                </label>
+                  {/* Visual Pill Switch with ON/OFF label */}
+                  <div className="flex flex-col items-center gap-1 shrink-0">
+                    <div className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                      geoEnabled ? 'bg-amber-500' : 'bg-[#2a2420]'
+                    }`}>
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        geoEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                    <span className={`text-[10px] font-bold tracking-wider ${
+                      geoEnabled ? 'text-amber-400' : 'text-[#706860]'
+                    }`}>
+                      {geoEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                </button>
 
-                {/* Unique PIN Checkbox */}
-                <label className="flex items-center gap-3 rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={pinRequired}
-                    onChange={(e) => setPinRequired(e.target.checked)}
-                    className="h-4 w-4 rounded accent-amber-500"
-                  />
-                  <div>
-                    <span className="text-xs font-semibold text-[#f5f0ea]">Require Screen PIN</span>
-                    <p className="text-[11px] text-[#706860]">Students must enter the rotating 6-digit key</p>
+                {/* Unique PIN Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setPinRequired((prev) => !prev)}
+                  className={`flex items-center justify-between text-left rounded-xl border p-4 transition cursor-pointer select-none ${
+                    pinRequired
+                      ? 'border-amber-500/50 bg-amber-500/10 shadow-amber-glow'
+                      : 'border-[rgba(255,235,215,0.08)] bg-[#181512] hover:border-[rgba(255,235,215,0.2)]'
+                  }`}
+                >
+                  <div className="space-y-0.5 pr-2">
+                    <span className="text-xs font-semibold text-[#f5f0ea] block">
+                      Require Screen PIN
+                    </span>
+                    <p className="text-[11px] text-[#706860]">
+                      Students must enter the rotating 6-digit key
+                    </p>
                   </div>
-                </label>
+                  {/* Visual Pill Switch with ON/OFF label */}
+                  <div className="flex flex-col items-center gap-1 shrink-0">
+                    <div className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                      pinRequired ? 'bg-amber-500' : 'bg-[#2a2420]'
+                    }`}>
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        pinRequired ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                    <span className={`text-[10px] font-bold tracking-wider ${
+                      pinRequired ? 'text-amber-400' : 'text-[#706860]'
+                    }`}>
+                      {pinRequired ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                </button>
 
-                {/* Static QR Checkbox */}
-                <label className="flex items-center gap-3 rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={startStaticQr}
-                    onChange={(e) => setStartStaticQr(e.target.checked)}
-                    className="h-4 w-4 rounded accent-amber-500"
-                  />
-                  <div>
-                    <span className="text-xs font-semibold text-[#f5f0ea]">Static QR Mode</span>
-                    <p className="text-[11px] text-[#706860]">Frozen QR & PIN (no 30s rotation)</p>
+                {/* Static QR Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setStartStaticQr((prev) => !prev)}
+                  className={`flex items-center justify-between text-left rounded-xl border p-4 transition cursor-pointer select-none ${
+                    startStaticQr
+                      ? 'border-emerald-500/50 bg-emerald-500/10 shadow-lg'
+                      : 'border-[rgba(255,235,215,0.08)] bg-[#181512] hover:border-[rgba(255,235,215,0.2)]'
+                  }`}
+                >
+                  <div className="space-y-0.5 pr-2">
+                    <span className={`text-xs font-semibold block ${
+                      startStaticQr ? 'text-emerald-400 font-bold' : 'text-[#f5f0ea]'
+                    }`}>
+                      Static QR Mode
+                    </span>
+                    <p className="text-[11px] text-[#706860]">
+                      Frozen QR & PIN (no 30s rotation)
+                    </p>
                   </div>
-                </label>
+                  {/* Visual Pill Switch with ON/OFF label */}
+                  <div className="flex flex-col items-center gap-1 shrink-0">
+                    <div className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                      startStaticQr ? 'bg-emerald-500' : 'bg-[#2a2420]'
+                    }`}>
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        startStaticQr ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                    <span className={`text-[10px] font-bold tracking-wider ${
+                      startStaticQr ? 'text-emerald-400 font-bold' : 'text-[#706860]'
+                    }`}>
+                      {startStaticQr ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                </button>
               </div>
 
               {/* Geofence Location Selection for New Session */}
@@ -1180,7 +1245,7 @@ export default function AdminDashboard() {
                 disabled={creating}
                 className="w-full min-h-[46px] rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-3 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 active:scale-[0.99] disabled:opacity-50"
               >
-                {creating ? 'Starting Session...' : 'Start Session & Launch Dynamic QR'}
+                {creating ? 'Starting Session...' : (startStaticQr ? 'Start Session & Launch Static QR (Frozen)' : 'Start Session & Launch Dynamic QR')}
               </button>
             </form>
           </div>

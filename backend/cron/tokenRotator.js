@@ -7,13 +7,15 @@ let rotatorTimer = null;
 function rotateActiveSessions() {
   try {
     const now = Date.now();
-    // Only rotate sessions that are active AND NOT in static QR mode
-    const activeSessions = db.prepare(`
-      SELECT id FROM sessions 
-      WHERE is_active = 1 AND (static_qr_mode IS NULL OR static_qr_mode = 0)
-    `).all();
+    // Only rotate sessions that are active
+    const activeSessions = db.prepare('SELECT id, static_qr_mode FROM sessions WHERE is_active = 1').all();
 
     for (const session of activeSessions) {
+      // NEVER rotate sessions in static QR mode
+      if (Number(session.static_qr_mode) === 1 || session.static_qr_mode === true) {
+        continue;
+      }
+
       const activeToken = db.prepare(`
         SELECT id FROM qr_tokens 
         WHERE session_id = ? AND expires_at > ? 
@@ -31,7 +33,7 @@ function rotateActiveSessions() {
     db.prepare(`
       DELETE FROM qr_tokens 
       WHERE expires_at < ? 
-        AND session_id IN (SELECT id FROM sessions WHERE static_qr_mode IS NULL OR static_qr_mode = 0)
+        AND session_id IN (SELECT id FROM sessions WHERE static_qr_mode IS NULL OR static_qr_mode = 0 OR static_qr_mode = '0')
     `).run(oneHourAgo);
   } catch (err) {
     console.error('[TokenRotator] Error during rotation cycle:', err.message);
@@ -80,7 +82,7 @@ function getCurrentToken(sessionId) {
   const session = db.prepare('SELECT id, is_active, static_qr_mode FROM sessions WHERE id = ?').get(sessionId);
   if (!session || session.is_active !== 1) return null;
 
-  const isStatic = session.static_qr_mode === 1;
+  const isStatic = Number(session.static_qr_mode) === 1 || session.static_qr_mode === true;
 
   // For static QR mode: return the session's fixed token without rotating
   if (isStatic) {

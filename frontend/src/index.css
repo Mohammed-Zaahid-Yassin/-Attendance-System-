@@ -72,8 +72,8 @@
     user-select: text;
   }
 
-  /* Prevent broken iOS input zoom (font must be >= 16px or we set it below) */
-  input,
+  /* Prevent broken iOS input zoom (font must be >= 16px) */
+  input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
     font-size: max(16px, 1em); /* ≥16px stops iOS Safari from zooming in */
