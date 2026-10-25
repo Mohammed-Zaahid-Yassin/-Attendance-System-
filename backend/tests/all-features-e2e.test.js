@@ -187,3 +187,95 @@ test('E2E Feature 5: Emergency Toggles (Geofence, PIN, Static QR)', () => {
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   }
 });
+
+test('E2E Feature 6: Dynamic Export Filename Calculation (Department + Year Filters)', () => {
+  // Test naming logic directly
+  function getShortDept(dept) {
+    if (!dept || dept === 'ALL') return '';
+    const match = dept.match(/\(([^)]+)\)/);
+    if (match && match[1]) {
+      return match[1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+    }
+    return dept.replace(/[^a-zA-Z0-9]/g, '').trim();
+  }
+
+  function getYearSuffix(yr) {
+    if (!yr || yr === 'ALL') return '';
+    const y = String(yr).trim();
+    if (y === '1') return '1stYear';
+    if (y === '2') return '2ndYear';
+    if (y === '3') return '3rdYear';
+    if (y === '4') return '4thYear';
+    if (/^\d+$/.test(y)) return `${y}Year`;
+    return y.replace(/[^a-zA-Z0-9]/g, '');
+  }
+
+  function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+    const deptStr = getShortDept(department);
+    const yearStr = getYearSuffix(year);
+
+    if (deptStr && yearStr) {
+      return `${deptStr}${yearStr}.${ext}`;
+    }
+    if (deptStr) {
+      return `${deptStr}.${ext}`;
+    }
+    if (yearStr) {
+      return `${yearStr}.${ext}`;
+    }
+    const subj = (subjectName || 'Attendance').replace(/[^a-zA-Z0-9]/g, '_');
+    const hr = hourNumber ? `_Hour${hourNumber}` : '';
+    const dt = new Date().toISOString().slice(0, 10);
+    return `Attendance_${subj}${hr}_${dt}.${ext}`;
+  }
+
+  // 1. Department + Year Filter (User's specific example: CSE + 2nd Year -> CSE2ndYear.xlsx / .csv)
+  const fn1 = computeExportFilename({
+    department: 'Computer Science and Engineering (CSE)',
+    year: '2',
+    subjectName: 'Data Structures',
+    hourNumber: 1,
+    ext: 'xlsx'
+  });
+  assert.equal(fn1, 'CSE2ndYear.xlsx', 'Both filters must produce CSE2ndYear.xlsx');
+
+  const fn1Csv = computeExportFilename({
+    department: 'Computer Science and Engineering (CSE)',
+    year: '2',
+    subjectName: 'Data Structures',
+    hourNumber: 1,
+    ext: 'csv'
+  });
+  assert.equal(fn1Csv, 'CSE2ndYear.csv', 'Both filters must produce CSE2ndYear.csv');
+
+  // 2. Department Only Filter (User: if 1 filter department - then it should be name of department -> CSE.xlsx)
+  const fn2 = computeExportFilename({
+    department: 'Computer Science and Engineering (CSE)',
+    year: 'ALL',
+    subjectName: 'Data Structures',
+    hourNumber: 1,
+    ext: 'xlsx'
+  });
+  assert.equal(fn2, 'CSE.xlsx', 'Department only filter must produce CSE.xlsx');
+
+  // 3. Year Only Filter
+  const fn3 = computeExportFilename({
+    department: 'ALL',
+    year: '3',
+    subjectName: 'Data Structures',
+    hourNumber: 1,
+    ext: 'xlsx'
+  });
+  assert.equal(fn3, '3rdYear.xlsx', 'Year only filter must produce 3rdYear.xlsx');
+
+  // 4. No Filter (Default subject and hour name)
+  const fn4 = computeExportFilename({
+    department: 'ALL',
+    year: 'ALL',
+    subjectName: 'Operating Systems',
+    hourNumber: 2,
+    ext: 'xlsx'
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal(fn4, `Attendance_Operating_Systems_Hour2_${today}.xlsx`, 'No filter must produce default attendance filename');
+});

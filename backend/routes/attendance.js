@@ -358,11 +358,57 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
     r.geo_verified ? 'Yes' : 'No'
   ]);
 
+function getShortDept(dept) {
+  if (!dept || dept === 'ALL') return '';
+  const match = dept.match(/\(([^)]+)\)/);
+  if (match && match[1]) {
+    return match[1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+  }
+  return dept.replace(/[^a-zA-Z0-9]/g, '').trim();
+}
+
+function getYearSuffix(yr) {
+  if (!yr || yr === 'ALL') return '';
+  const y = String(yr).trim();
+  if (y === '1') return '1stYear';
+  if (y === '2') return '2ndYear';
+  if (y === '3') return '3rdYear';
+  if (y === '4') return '4thYear';
+  if (/^\d+$/.test(y)) return `${y}Year`;
+  return y.replace(/[^a-zA-Z0-9]/g, '');
+}
+
+function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+  const deptStr = getShortDept(department);
+  const yearStr = getYearSuffix(year);
+
+  if (deptStr && yearStr) {
+    return `${deptStr}${yearStr}.${ext}`;
+  }
+  if (deptStr) {
+    return `${deptStr}.${ext}`;
+  }
+  if (yearStr) {
+    return `${yearStr}.${ext}`;
+  }
+  const subj = (subjectName || 'Attendance').replace(/[^a-zA-Z0-9]/g, '_');
+  const hr = hourNumber ? `_Hour${hourNumber}` : '';
+  const dt = new Date().toISOString().slice(0, 10);
+  return `Attendance_${subj}${hr}_${dt}.${ext}`;
+}
+
   const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-  const filename = `Attendance_${session.subject_name.replace(/[^a-zA-Z0-9]/g, '_')}_Hour${session.hour_number}_${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = computeExportFilename({
+    department,
+    year,
+    subjectName: session.subject_name,
+    hourNumber: session.hour_number,
+    ext: 'csv'
+  });
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   return res.send(csvContent);
 });
 
@@ -445,10 +491,17 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
   XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-  const filename = `Attendance_${session.subject_name.replace(/[^a-zA-Z0-9]/g, '_')}_Hour${session.hour_number}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const filename = computeExportFilename({
+    department,
+    year,
+    subjectName: session.subject_name,
+    hourNumber: session.hour_number,
+    ext: 'xlsx'
+  });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   return res.send(buffer);
 });
 

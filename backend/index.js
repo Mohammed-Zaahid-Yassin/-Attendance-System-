@@ -17,7 +17,8 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors({
   origin: true,
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['Content-Disposition']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

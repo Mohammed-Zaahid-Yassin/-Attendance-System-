@@ -19,6 +19,48 @@ import {
   Edit2
 } from 'lucide-react';
 
+// Helper to extract short department code or clean name
+export function getShortDept(dept) {
+  if (!dept || dept === 'ALL') return '';
+  const match = dept.match(/\(([^)]+)\)/);
+  if (match && match[1]) {
+    return match[1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+  }
+  return dept.replace(/[^a-zA-Z0-9]/g, '').trim();
+}
+
+// Helper to format year suffix (e.g. 2 -> 2ndYear)
+export function getYearSuffix(yr) {
+  if (!yr || yr === 'ALL') return '';
+  const y = String(yr).trim();
+  if (y === '1') return '1stYear';
+  if (y === '2') return '2ndYear';
+  if (y === '3') return '3rdYear';
+  if (y === '4') return '4thYear';
+  if (/^\d+$/.test(y)) return `${y}Year`;
+  return y.replace(/[^a-zA-Z0-9]/g, '');
+}
+
+// Helper to compute clean export filename
+export function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+  const deptStr = getShortDept(department);
+  const yearStr = getYearSuffix(year);
+
+  if (deptStr && yearStr) {
+    return `${deptStr}${yearStr}.${ext}`;
+  }
+  if (deptStr) {
+    return `${deptStr}.${ext}`;
+  }
+  if (yearStr) {
+    return `${yearStr}.${ext}`;
+  }
+  const subj = (subjectName || 'Attendance').replace(/[^a-zA-Z0-9]/g, '_');
+  const hr = hourNumber ? `_Hour${hourNumber}` : '';
+  const dt = new Date().toISOString().slice(0, 10);
+  return `Attendance_${subj}${hr}_${dt}.${ext}`;
+}
+
 export default function LiveAttendance() {
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionFromUrl = searchParams.get('session');
@@ -93,25 +135,66 @@ export default function LiveAttendance() {
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedYear, setSelectedYear] = useState('ALL');
   const [sortBy, setSortBy] = useState('time_desc'); // 'time_desc' | 'time_asc' | 'name_asc' | 'usn_asc'
+  const [exportingFormat, setExportingFormat] = useState(null); // 'csv' | 'xlsx' | null
 
-  // Export CSV or XLSX with applied department & year filters
-  const handleExport = (format = 'csv') => {
-    if (!selectedSessionId) return;
-    const params = new URLSearchParams();
-    if (selectedDept !== 'ALL') params.append('department', selectedDept);
-    if (selectedYear !== 'ALL') params.append('year', selectedYear);
+  // Export CSV or XLSX with applied department & year filters and authenticated blob download
+  const handleExport = async (format = 'csv') => {
+    if (!selectedSessionId || exportingFormat) return;
+    setExportingFormat(format);
 
-    const queryStr = params.toString() ? `?${params.toString()}` : '';
-    const exportUrl = format === 'xlsx'
-      ? `/api/attendance/export-xlsx/${selectedSessionId}${queryStr}`
-      : `/api/attendance/export/${selectedSessionId}${queryStr}`;
+    try {
+      const params = new URLSearchParams();
+      if (selectedDept !== 'ALL') params.append('department', selectedDept);
+      if (selectedYear !== 'ALL') params.append('year', selectedYear);
 
-    const link = document.createElement('a');
-    link.href = exportUrl;
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+      const endpoint = format === 'xlsx'
+        ? `/api/attendance/export-xlsx/${selectedSessionId}${queryStr}`
+        : `/api/attendance/export/${selectedSessionId}${queryStr}`;
+
+      const res = await axios.get(endpoint, {
+        ...authConfig,
+        responseType: 'blob'
+      });
+
+      // Determine filename: check server Content-Disposition or compute locally
+      let fileName = '';
+      const disposition = res.headers ? (res.headers['content-disposition'] || res.headers['Content-Disposition']) : null;
+      if (disposition && disposition.includes('filename=')) {
+        const matches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (matches && matches[1]) {
+          fileName = matches[1].replace(/['"]/g, '').trim();
+        }
+      }
+
+      if (!fileName) {
+        fileName = computeExportFilename({
+          department: selectedDept,
+          year: selectedYear,
+          subjectName: sessionData?.subject_name,
+          hourNumber: sessionData?.hour_number,
+          ext: format
+        });
+      }
+
+      const mimeType = format === 'xlsx'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/csv;charset=utf-8;';
+      const blob = new Blob([res.data], { type: mimeType });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('[Export Error]', err);
+      alert('Failed to download attendance file. Please verify you are logged in as admin and try again.');
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   // Manual Override: Mark student attendance manually
@@ -254,22 +337,30 @@ export default function LiveAttendance() {
             {/* Export CSV & XLSX buttons */}
             <button
               onClick={() => handleExport('csv')}
-              disabled={!records.length}
+              disabled={!records.length || !!exportingFormat}
               className="flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#f5f0ea] hover:border-amber-500/50 hover:bg-[#201c18] transition disabled:opacity-40"
-              title="Export filtered records to CSV"
+              title={`Export filtered records to CSV (${computeExportFilename({ department: selectedDept, year: selectedYear, subjectName: sessionData?.subject_name, hourNumber: sessionData?.hour_number, ext: 'csv' })})`}
             >
-              <Download className="h-3.5 w-3.5 text-amber-400" />
-              <span>CSV</span>
+              {exportingFormat === 'csv' ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-400" />
+              ) : (
+                <Download className="h-3.5 w-3.5 text-amber-400" />
+              )}
+              <span>{exportingFormat === 'csv' ? 'Exporting...' : 'CSV'}</span>
             </button>
 
             <button
               onClick={() => handleExport('xlsx')}
-              disabled={!records.length}
+              disabled={!records.length || !!exportingFormat}
               className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-40"
-              title="Export filtered records to Excel XLSX"
+              title={`Export filtered records to Excel XLSX (${computeExportFilename({ department: selectedDept, year: selectedYear, subjectName: sessionData?.subject_name, hourNumber: sessionData?.hour_number, ext: 'xlsx' })})`}
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              <span>Excel (.XLSX)</span>
+              {exportingFormat === 'xlsx' ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+              )}
+              <span>{exportingFormat === 'xlsx' ? 'Exporting...' : 'Excel (.XLSX)'}</span>
             </button>
           </div>
         </div>
