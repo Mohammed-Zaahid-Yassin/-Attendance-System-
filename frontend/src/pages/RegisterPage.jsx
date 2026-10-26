@@ -432,7 +432,7 @@ export default function RegisterPage() {
                   onChange={handleChange}
                   className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 text-sm text-[#f5f0ea] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 >
-                  {MVJCE_SCHOOLS.map((group) => (
+                  {MVJCE_SCHOOLS.filter(s => !s.school.includes('1st Year Cycles')).map((group) => (
                     <optgroup key={group.school} label={group.school} className="bg-[#120f0d] text-amber-400 font-semibold">
                       {group.departments.map((dept) => (
                         <option key={dept} value={dept} className="bg-[#181512] text-[#f5f0ea] font-normal pl-4">

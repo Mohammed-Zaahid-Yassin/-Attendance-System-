@@ -485,6 +485,15 @@ export default function LiveAttendance() {
                     ))}
                   </optgroup>
                 ))}
+                {records.some(r => r.department && !ALL_MVJCE_DEPARTMENTS.includes(r.department)) && (
+                  <optgroup label="Other in Session" className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                    {Array.from(new Set(records.map(r => r.department).filter(d => d && !ALL_MVJCE_DEPARTMENTS.includes(d)))).map(d => (
+                      <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                        {d}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 

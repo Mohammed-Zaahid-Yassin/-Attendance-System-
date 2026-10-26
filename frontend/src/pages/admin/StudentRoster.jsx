@@ -74,9 +74,11 @@ export default function StudentRoster() {
     setEditName(student.name || '');
     setEditUsn(student.usn || '');
     setEditStudentId(student.student_id || '');
-    setEditDept(student.department || '');
-    setEditYear(student.year || 1);
-    setEditCycle(student.cycle || '');
+    const yr = student.year || 1;
+    setEditYear(yr);
+    const cyc = student.cycle || (student.department?.includes('Chemistry') ? 'Chemistry Cycle' : 'Physics Cycle');
+    setEditCycle(cyc);
+    setEditDept(yr === 1 ? `Basic Sciences (${cyc})` : (student.department || ''));
     setEditMobile(student.mobile || '');
     setEditError('');
   };
@@ -89,15 +91,24 @@ export default function StudentRoster() {
     setEditError('');
 
     try {
+      const yr = parseInt(editYear, 10);
+      let finalDept = editDept.trim();
+      let finalCycle = null;
+
+      if (yr === 1) {
+        finalCycle = editCycle || 'Physics Cycle';
+        finalDept = `Basic Sciences (${finalCycle})`;
+      }
+
       const res = await axios.put(
         `/api/admin/students/${editingStudent.student_id}`,
         {
           name: editName.trim(),
           usn: editUsn.trim().toUpperCase(),
           new_student_id: editStudentId.trim().toUpperCase(),
-          department: editDept.trim(),
-          year: parseInt(editYear, 10),
-          cycle: editYear === 1 ? editCycle : null,
+          department: finalDept,
+          year: yr,
+          cycle: finalCycle,
           mobile: editMobile.trim()
         },
         axiosConfig
@@ -173,6 +184,15 @@ export default function StudentRoster() {
                   ))}
                 </optgroup>
               ))}
+              {students.some(s => s.department && !ALL_MVJCE_DEPARTMENTS.includes(s.department)) && (
+                <optgroup label="Other in Database" className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                  {Array.from(new Set(students.map(s => s.department).filter(d => d && !ALL_MVJCE_DEPARTMENTS.includes(d)))).map(d => (
+                    <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                      {d}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -357,38 +377,19 @@ export default function StudentRoster() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
-                    Department
-                  </label>
-                  <select
-                    value={editDept}
-                    onChange={(e) => setEditDept(e.target.value)}
-                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="">Select Department...</option>
-                    {editDept && !ALL_MVJCE_DEPARTMENTS.includes(editDept) && (
-                      <option value={editDept} className="bg-[#181512] text-[#f5f0ea] font-semibold">
-                        {editDept} (Current)
-                      </option>
-                    )}
-                    {MVJCE_SCHOOLS.map((school) => (
-                      <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-[#a39b94] font-semibold">
-                        {school.departments.map((d) => (
-                          <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
-                            {d}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
                     Academic Year
                   </label>
                   <select
                     value={editYear}
-                    onChange={(e) => setEditYear(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const yr = parseInt(e.target.value, 10);
+                      setEditYear(yr);
+                      if (yr === 1) {
+                        const cyc = editCycle || 'Physics Cycle';
+                        setEditCycle(cyc);
+                        setEditDept(`Basic Sciences (${cyc})`);
+                      }
+                    }}
                     className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
                   >
                     <option value={1}>1st Year</option>
@@ -397,23 +398,54 @@ export default function StudentRoster() {
                     <option value={4}>4th Year</option>
                   </select>
                 </div>
-              </div>
 
-              {editYear === 1 && (
-                <div>
-                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
-                    Cycle (1st Year Only)
-                  </label>
-                  <select
-                    value={editCycle}
-                    onChange={(e) => setEditCycle(e.target.value)}
-                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="Physics Cycle">Physics Cycle</option>
-                    <option value="Chemistry Cycle">Chemistry Cycle</option>
-                  </select>
-                </div>
-              )}
+                {editYear === 1 ? (
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                      Cycle (1st Year)
+                    </label>
+                    <select
+                      value={editCycle || 'Physics Cycle'}
+                      onChange={(e) => {
+                        const cyc = e.target.value;
+                        setEditCycle(cyc);
+                        setEditDept(`Basic Sciences (${cyc})`);
+                      }}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="Physics Cycle">Physics Cycle</option>
+                      <option value="Chemistry Cycle">Chemistry Cycle</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                      Department
+                    </label>
+                    <select
+                      value={editDept}
+                      onChange={(e) => setEditDept(e.target.value)}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="">Select Department...</option>
+                      {editDept && !ALL_MVJCE_DEPARTMENTS.includes(editDept) && (
+                        <option value={editDept} className="bg-[#181512] text-[#f5f0ea] font-semibold">
+                          {editDept} (Current)
+                        </option>
+                      )}
+                      {MVJCE_SCHOOLS.filter(s => !s.school.includes('1st Year Cycles')).map((school) => (
+                        <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-[#a39b94] font-semibold">
+                          {school.departments.map((d) => (
+                            <option key={d} value={d} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                              {d}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
 
               <div className="flex gap-2 pt-3">
                 <button

@@ -11,6 +11,7 @@ export const MVJCE_SCHOOLS = [
       'Information Science and Engineering (ISE)',
       'Artificial Intelligence and Machine Learning (AI & ML)',
       'Computer Science and Engineering - Data Science (CSE-DS)',
+      'Computer Science and Engineering - Graphical Design (CSE-CG)',
       'Computer Science and Design (CS & Design)'
     ]
   },

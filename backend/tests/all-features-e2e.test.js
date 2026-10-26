@@ -274,4 +274,24 @@ test('E2E Feature 6: Dynamic Export Filename Calculation (Department + Year Filt
     ext: 'xlsx'
   });
   assert.equal(fn4, 'AI Seminar.xlsx', 'No filter must produce Event name.xlsx');
+
+  // 5. CSE-CG Department Test
+  const fn5 = computeExportFilename({
+    department: 'Computer Science and Engineering - Graphical Design (CSE-CG)',
+    year: '3',
+    subjectName: 'Graphics Workshop',
+    hourNumber: 1,
+    ext: 'xlsx'
+  });
+  assert.equal(fn5, 'Graphics Workshop-CSE-CG-3rdYear.xlsx', 'CSE-CG department must format as Graphics Workshop-CSE-CG-3rdYear.xlsx');
+
+  // 6. Basic Sciences Physics Cycle Test
+  const fn6 = computeExportFilename({
+    department: 'Basic Sciences (Physics Cycle)',
+    year: '1',
+    subjectName: 'Induction Program',
+    hourNumber: 1,
+    ext: 'xlsx'
+  });
+  assert.equal(fn6, 'Induction Program-PhysicsCycle-1stYear.xlsx', '1st year Physics Cycle must format properly');
 });
