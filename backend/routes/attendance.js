@@ -379,22 +379,19 @@ function getYearSuffix(yr) {
 }
 
 function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+  let cleanEvent = (subjectName || '').replace(/[/\\?%*:|"<>]/g, '').trim();
+  if (!cleanEvent) {
+    cleanEvent = hourNumber ? `Attendance-Hour${hourNumber}` : 'Attendance';
+  }
+
   const deptStr = getShortDept(department);
   const yearStr = getYearSuffix(year);
 
-  if (deptStr && yearStr) {
-    return `${deptStr}${yearStr}.${ext}`;
-  }
-  if (deptStr) {
-    return `${deptStr}.${ext}`;
-  }
-  if (yearStr) {
-    return `${yearStr}.${ext}`;
-  }
-  const subj = (subjectName || 'Attendance').replace(/[^a-zA-Z0-9]/g, '_');
-  const hr = hourNumber ? `_Hour${hourNumber}` : '';
-  const dt = new Date().toISOString().slice(0, 10);
-  return `Attendance_${subj}${hr}_${dt}.${ext}`;
+  const parts = [cleanEvent];
+  if (deptStr) parts.push(deptStr);
+  if (yearStr) parts.push(yearStr);
+
+  return `${parts.join('-')}.${ext}`;
 }
 
   const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');

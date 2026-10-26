@@ -211,71 +211,67 @@ test('E2E Feature 6: Dynamic Export Filename Calculation (Department + Year Filt
   }
 
   function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+    let cleanEvent = (subjectName || '').replace(/[/\\?%*:|"<>]/g, '').trim();
+    if (!cleanEvent) {
+      cleanEvent = hourNumber ? `Attendance-Hour${hourNumber}` : 'Attendance';
+    }
+
     const deptStr = getShortDept(department);
     const yearStr = getYearSuffix(year);
 
-    if (deptStr && yearStr) {
-      return `${deptStr}${yearStr}.${ext}`;
-    }
-    if (deptStr) {
-      return `${deptStr}.${ext}`;
-    }
-    if (yearStr) {
-      return `${yearStr}.${ext}`;
-    }
-    const subj = (subjectName || 'Attendance').replace(/[^a-zA-Z0-9]/g, '_');
-    const hr = hourNumber ? `_Hour${hourNumber}` : '';
-    const dt = new Date().toISOString().slice(0, 10);
-    return `Attendance_${subj}${hr}_${dt}.${ext}`;
+    const parts = [cleanEvent];
+    if (deptStr) parts.push(deptStr);
+    if (yearStr) parts.push(yearStr);
+
+    return `${parts.join('-')}.${ext}`;
   }
 
-  // 1. Department + Year Filter (User's specific example: CSE + 2nd Year -> CSE2ndYear.xlsx / .csv)
+  // 1. Department + Year Filter -> Event name-Department-Year.xlsx / .csv
   const fn1 = computeExportFilename({
     department: 'Computer Science and Engineering (CSE)',
     year: '2',
-    subjectName: 'Data Structures',
+    subjectName: 'AI Seminar',
     hourNumber: 1,
     ext: 'xlsx'
   });
-  assert.equal(fn1, 'CSE2ndYear.xlsx', 'Both filters must produce CSE2ndYear.xlsx');
+  assert.equal(fn1, 'AI Seminar-CSE-2ndYear.xlsx', 'Both filters must produce Event name-Department-Year.xlsx');
 
   const fn1Csv = computeExportFilename({
     department: 'Computer Science and Engineering (CSE)',
     year: '2',
-    subjectName: 'Data Structures',
+    subjectName: 'AI Seminar',
     hourNumber: 1,
     ext: 'csv'
   });
-  assert.equal(fn1Csv, 'CSE2ndYear.csv', 'Both filters must produce CSE2ndYear.csv');
+  assert.equal(fn1Csv, 'AI Seminar-CSE-2ndYear.csv', 'Both filters must produce Event name-Department-Year.csv');
 
-  // 2. Department Only Filter (User: if 1 filter department - then it should be name of department -> CSE.xlsx)
+  // 2. Department Only Filter -> Event name-Department.xlsx
   const fn2 = computeExportFilename({
     department: 'Computer Science and Engineering (CSE)',
     year: 'ALL',
-    subjectName: 'Data Structures',
+    subjectName: 'AI Seminar',
     hourNumber: 1,
     ext: 'xlsx'
   });
-  assert.equal(fn2, 'CSE.xlsx', 'Department only filter must produce CSE.xlsx');
+  assert.equal(fn2, 'AI Seminar-CSE.xlsx', 'Department only filter must produce Event name-Department.xlsx');
 
-  // 3. Year Only Filter
+  // 3. Year Only Filter -> Event name-Year.xlsx
   const fn3 = computeExportFilename({
     department: 'ALL',
     year: '3',
-    subjectName: 'Data Structures',
+    subjectName: 'AI Seminar',
     hourNumber: 1,
     ext: 'xlsx'
   });
-  assert.equal(fn3, '3rdYear.xlsx', 'Year only filter must produce 3rdYear.xlsx');
+  assert.equal(fn3, 'AI Seminar-3rdYear.xlsx', 'Year only filter must produce Event name-Year.xlsx');
 
-  // 4. No Filter (Default subject and hour name)
+  // 4. No Filter -> Event name.xlsx
   const fn4 = computeExportFilename({
     department: 'ALL',
     year: 'ALL',
-    subjectName: 'Operating Systems',
-    hourNumber: 2,
+    subjectName: 'AI Seminar',
+    hourNumber: 1,
     ext: 'xlsx'
   });
-  const today = new Date().toISOString().slice(0, 10);
-  assert.equal(fn4, `Attendance_Operating_Systems_Hour2_${today}.xlsx`, 'No filter must produce default attendance filename');
+  assert.equal(fn4, 'AI Seminar.xlsx', 'No filter must produce Event name.xlsx');
 });
