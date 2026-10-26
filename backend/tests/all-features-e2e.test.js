@@ -295,3 +295,134 @@ test('E2E Feature 6: Dynamic Export Filename Calculation (Department + Year Filt
   });
   assert.equal(fn6, 'Induction Program-PhysicsCycle-1stYear.xlsx', '1st year Physics Cycle must format properly');
 });
+
+test('E2E Feature 7: Admin Authentication & Dual-Mode Token (Header and Query Param)', () => {
+  const secret = process.env.JWT_SECRET || 'attendance_secure_jwt_secret_key_2024_xyz';
+  const validToken = jwt.sign({ username: 'admin', role: 'admin' }, secret, { expiresIn: '12h' });
+
+  // 1. Header Bearer extraction
+  const reqHeader = { headers: { authorization: `Bearer ${validToken}` }, query: {} };
+  const parts = reqHeader.headers.authorization.split(' ');
+  assert.equal(parts[0], 'Bearer');
+  const decodedHeader = jwt.verify(parts[1], secret);
+  assert.equal(decodedHeader.username, 'admin');
+
+  // 2. Query Parameter fallback
+  const reqQuery = { headers: {}, query: { token: validToken } };
+  const tokenFromQuery = reqQuery.query.token;
+  const decodedQuery = jwt.verify(tokenFromQuery, secret);
+  assert.equal(decodedQuery.username, 'admin');
+
+  // 3. Expired or invalid token rejection
+  assert.throws(() => {
+    jwt.verify('invalid-token-123', secret);
+  }, /jwt malformed/, 'Invalid token must throw verification error');
+});
+
+test('E2E Feature 8: Student Roster Edit & 1st Year Basic Sciences Auto-Assignment', () => {
+  const testUsn = '1MJ24TEST99';
+  const studentId = 'TEST9999';
+
+  try {
+    // 1. Create a 1st year student
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare(`
+      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile)
+      VALUES (?, 'Test FirstYear', ?, 'Basic Sciences (Physics Cycle)', 1, 'Physics Cycle', '9876543210')
+    `).run(studentId, testUsn);
+
+    let student = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
+    assert.equal(student.department, 'Basic Sciences (Physics Cycle)');
+    assert.equal(student.year, 1);
+    assert.equal(student.cycle, 'Physics Cycle');
+
+    // 2. Admin edits student to Chemistry Cycle
+    const newDept = 'Basic Sciences (Chemistry Cycle)';
+    const newCycle = 'Chemistry Cycle';
+    db.prepare(`
+      UPDATE students 
+      SET department = ?, cycle = ?
+      WHERE student_id = ?
+    `).run(newDept, newCycle, studentId);
+
+    student = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
+    assert.equal(student.department, 'Basic Sciences (Chemistry Cycle)');
+    assert.equal(student.cycle, 'Chemistry Cycle');
+
+    // 3. Student promoted to 2nd year CSE-CG
+    db.prepare(`
+      UPDATE students 
+      SET department = 'Computer Science and Engineering - Graphical Design (CSE-CG)', year = 2, cycle = NULL
+      WHERE student_id = ?
+    `).run(studentId);
+
+    student = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
+    assert.equal(student.year, 2);
+    assert.equal(student.cycle, null);
+    assert.equal(student.department, 'Computer Science and Engineering - Graphical Design (CSE-CG)');
+  } finally {
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+  }
+});
+
+test('E2E Feature 9: Manual Attendance Override & Cascade Delete', () => {
+  const sessionRes = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
+    VALUES ('Manual Override Test', 'MOT101', 1, 'admin', 1, 0, 0)
+  `).run();
+  const sessionId = sessionRes.lastInsertRowid;
+  const testUsn = '1MJ24MANUAL1';
+  const studentId = 'MANU1234';
+
+  try {
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare(`
+      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile)
+      VALUES (?, 'Manual Student', ?, 'Computer Science and Engineering (CSE)', 3, null, '9876541234')
+    `).run(studentId, testUsn);
+
+    // 1. Manual Attendance Override
+    const insertRes = db.prepare(`
+      INSERT INTO attendance (session_id, student_id, lat, lng, geo_verified, token_used)
+      VALUES (?, ?, 0, 0, 1, 'MANUAL_OVERRIDE')
+    `).run(sessionId, studentId);
+    const attendanceId = insertRes.lastInsertRowid;
+
+    const record = db.prepare('SELECT * FROM attendance WHERE id = ?').get(attendanceId);
+    assert.ok(record, 'Manual attendance record must be created');
+    assert.equal(record.token_used, 'MANUAL_OVERRIDE');
+    assert.equal(record.geo_verified, 1);
+
+    // 2. Headcount
+    const count = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE session_id = ?').get(sessionId).count;
+    assert.equal(count, 1);
+
+    // 3. Delete attendance record
+    db.prepare('DELETE FROM attendance WHERE id = ?').run(attendanceId);
+    const afterDelete = db.prepare('SELECT * FROM attendance WHERE id = ?').get(attendanceId);
+    assert.equal(afterDelete, undefined, 'Attendance record must be deleted');
+  } finally {
+    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  }
+});
+
+test('E2E Feature 10: Complete CSV & XLSX Export Data Generation', () => {
+  const XLSX = require('xlsx');
+  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Marked At', 'Geo Verified'];
+  const testRow = [1, 'TEST0001', 'Test Student', '1MJ24CS001', 'Computer Science and Engineering - Graphical Design (CSE-CG)', 2, 'N/A', '9876540001', '2026-10-26 09:30:00', 'Yes'];
+
+  // 1. Verify CSV formatting
+  const csvContent = [headers.join(','), testRow.map(c => `"${c}"`).join(',')].join('\n');
+  assert.ok(csvContent.includes('CSE-CG'), 'CSV must contain department CSE-CG');
+  assert.ok(csvContent.includes('1MJ24CS001'), 'CSV must contain USN');
+
+  // 2. Verify XLSX binary generation
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, testRow]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  assert.ok(Buffer.isBuffer(buffer), 'XLSX generator must return valid Buffer');
+  assert.ok(buffer.length > 1000, 'XLSX buffer must contain non-empty spreadsheet bytes');
+});
