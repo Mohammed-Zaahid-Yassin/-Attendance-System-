@@ -38,10 +38,7 @@ export const MVJCE_SCHOOLS = [
     school: 'School of Basic Sciences (1st Year Cycles)',
     departments: [
       'Basic Sciences (Physics Cycle)',
-      'Basic Sciences (Chemistry Cycle)',
-      'Physics',
-      'Chemistry',
-      'Mathematics'
+      'Basic Sciences (Chemistry Cycle)'
     ]
   },
   {
