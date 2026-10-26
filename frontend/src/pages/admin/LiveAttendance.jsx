@@ -157,25 +157,19 @@ export default function LiveAttendance() {
         responseType: 'blob'
       });
 
-      // Determine filename: check server Content-Disposition or compute locally
-      let fileName = '';
-      const disposition = res.headers ? (res.headers['content-disposition'] || res.headers['Content-Disposition']) : null;
-      if (disposition && disposition.includes('filename=')) {
-        const matches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (matches && matches[1]) {
-          fileName = matches[1].replace(/['"]/g, '').trim();
-        }
-      }
-
-      if (!fileName) {
-        fileName = computeExportFilename({
-          department: selectedDept,
-          year: selectedYear,
-          subjectName: sessionData?.subject_name,
-          hourNumber: sessionData?.hour_number,
-          ext: format
-        });
-      }
+      // Authoritative client-side filename matching user format:
+      // Event name-Department-Year.csv/xlsx
+      // Event name-Year.csv/xlsx
+      // Event name-Department.csv/xlsx
+      // Event name.csv/xlsx
+      const currentSession = sessions.find((s) => String(s.id) === String(selectedSessionId)) || sessionData;
+      const fileName = computeExportFilename({
+        department: selectedDept,
+        year: selectedYear,
+        subjectName: currentSession?.subject_name || sessionData?.subject_name,
+        hourNumber: currentSession?.hour_number || sessionData?.hour_number,
+        ext: format
+      });
 
       const mimeType = format === 'xlsx'
         ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
