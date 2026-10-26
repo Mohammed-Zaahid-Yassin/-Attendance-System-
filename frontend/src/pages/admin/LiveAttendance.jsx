@@ -144,9 +144,11 @@ export default function LiveAttendance() {
     setExportingFormat(format);
 
     try {
+      const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
       const params = new URLSearchParams();
       if (selectedDept !== 'ALL') params.append('department', selectedDept);
       if (selectedYear !== 'ALL') params.append('year', selectedYear);
+      if (currentToken) params.append('token', currentToken);
 
       const queryStr = params.toString() ? `?${params.toString()}` : '';
       const endpoint = format === 'xlsx'
@@ -154,7 +156,7 @@ export default function LiveAttendance() {
         : `/api/attendance/export/${selectedSessionId}${queryStr}`;
 
       const res = await axios.get(endpoint, {
-        ...authConfig,
+        headers: currentToken ? { Authorization: `Bearer ${currentToken}` } : {},
         responseType: 'blob'
       });
 
@@ -192,7 +194,19 @@ export default function LiveAttendance() {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error('[Export Error]', err);
-      alert('Failed to download attendance file. Please verify you are logged in as admin and try again.');
+      let errMsg = 'Failed to download attendance file.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.error) errMsg = `Failed: ${json.error}`;
+        } catch (_) {}
+      } else if (err.response?.data?.error) {
+        errMsg = `Failed: ${err.response.data.error}`;
+      } else if (err.message) {
+        errMsg = `Failed: ${err.message}`;
+      }
+      alert(errMsg);
     } finally {
       setExportingFormat(null);
     }
