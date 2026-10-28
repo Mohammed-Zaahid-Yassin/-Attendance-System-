@@ -17,9 +17,14 @@ This guide explains how to host the **SPOTLIGHT Attendance System** with the fro
 
 > *You can deploy the backend for free in under 2 minutes.*
 
-### Option A: Deploy on Render.com (Recommended Free Tier)
+### Option A: Deploy on Render.com with Persistent Disk (Recommended)
+
+> ⚠️ **IMPORTANT PERSISTENCE NOTE**: Render's free tier uses an **ephemeral filesystem** that discards local files when the container sleeps after 15 minutes of inactivity. When woken up, the database file is recreated and resets credentials to `ADMIN_PASSWORD`.
+>
+> To ensure your student data, attendance history, and **admin password changes persist permanently across Render sleep/wake cycles and redeployments**, attach a **Render Persistent Disk**:
+
 1. Go to [render.com](https://render.com) and log in.
-2. Click **New +** → **Web Service**.
+2. Click **New +** → **Web Service** (or use **Blueprints** with the included `render.yaml`).
 3. Connect your GitHub repository: `Mohammed-Zaahid-Yassin/-Attendance-System`.
 4. Configure the service:
    - **Name**: `attendance-backend`
@@ -27,16 +32,24 @@ This guide explains how to host the **SPOTLIGHT Attendance System** with the fro
    - **Runtime**: `Node`
    - **Build Command**: `npm install`
    - **Start Command**: `node index.js`
-   - **Plan**: Free
-5. Add **Environment Variables** in the Render settings:
+   - **Plan**: Starter (or higher to enable Persistent Disks)
+5. Under **Disks** (in service settings):
+   - Click **Add Disk**
+   - **Name**: `attendance_data`
+   - **Mount Path**: `/var/data`
+   - **Size**: `1 GB` (more than enough for 50,000+ attendance records)
+6. Add **Environment Variables** in the Render settings:
    - `PORT`: `3001`
+   - `DB_PATH`: `/var/data/attendance.db` *(points inside the persistent disk)*
    - `JWT_SECRET`: *(Generate any random strong secret string)*
-   - `REGISTRATION_KEY`: `STATIC_REG_QR_KEY_SECRET_7890` *(or your custom key)*
+   - `REGISTRATION_KEY`: `STATIC_REG_QR_KEY_SECRET_7890` *(or your custom secret)*
    - `ADMIN_USERNAME`: `admin`
-   - `ADMIN_PASSWORD`: `your_secure_password_here`
-   - `DB_PATH`: `./attendance.db`
-6. Click **Create Web Service**.
-7. Once deployed, copy your backend URL (e.g., `https://attendance-backend-xxxx.onrender.com`).
+   - `ADMIN_PASSWORD`: `your_initial_secure_password` *(Only used for initial first-time account setup; subsequent password changes in the admin dashboard persist permanently in the database)*
+   - `NODE_ENV`: `production`
+7. Click **Create Web Service**.
+8. Once deployed, copy your backend URL (e.g., `https://attendance-backend-xxxx.onrender.com`).
+
+*(Note: If using Render Blueprints, connecting the repo will automatically provision the service and disk defined in [render.yaml](file:///d:/Projects/Attendance%20System/render.yaml).)*
 
 ---
 

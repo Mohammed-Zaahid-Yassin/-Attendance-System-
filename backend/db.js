@@ -1,9 +1,14 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'attendance.db');
+const dbDir = path.dirname(path.resolve(dbPath));
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 const db = new Database(dbPath);
 
 // Enable WAL mode & high-performance concurrency settings for 1200+ attendees
@@ -268,19 +273,24 @@ function initDb() {
     );
   `);
 
-  // Create default admin if none exists
-  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-
-  const existingAdmin = db.prepare('SELECT id FROM admins WHERE username = ?').get(adminUsername);
-  if (!existingAdmin) {
+  // Create default admin ONLY if NO admin exists in the database.
+  // This preserves intentional password changes across restarts, sleep/wake cycles, or container redeployments.
+  const adminCountRow = db.prepare('SELECT COUNT(*) as count FROM admins').get();
+  const adminCount = adminCountRow ? adminCountRow.count : 0;
+  if (adminCount === 0) {
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(adminPassword, salt);
     db.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(adminUsername, hash);
-    console.log(`[DB] Default admin initialized: username='${adminUsername}'`);
+    console.log(`[DB] Initial admin initialized: username='${adminUsername}'`);
+  } else {
+    console.log(`[DB] Preserved ${adminCount} existing admin account(s); seed skipped.`);
   }
 }
 
 initDb();
+
+db.initDb = initDb;
 
 module.exports = db;

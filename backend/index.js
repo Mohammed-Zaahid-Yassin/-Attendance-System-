@@ -95,7 +95,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
   console.log(`📁 Database: SQLite (better-sqlite3)`);
   console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 19s)`);
-  console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890'}`);
-  console.log(`👤 Default Admin: username='admin', password='${process.env.ADMIN_PASSWORD || 'admin123'}'`);
+  console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY ? '[CONFIGURED]' : '[DEFAULT]'}`);
+  console.log(`👤 Admin Account: username='${process.env.ADMIN_USERNAME || 'admin'}', password='[PROTECTED]'`);
   console.log(`=======================================================`);
 });

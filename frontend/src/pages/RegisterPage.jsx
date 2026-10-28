@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 import { MvjLogo, DeveloperCredit } from '../components/Branding';
+import { saveStudentId } from '../utils/studentStorage';
 
 import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS as MVJCE_DEPARTMENTS } from '../utils/departments';
 
@@ -125,7 +126,13 @@ export default function RegisterPage() {
 
       const res = await axios.post('/api/register', payload);
       setRegisteredStudent(res.data.student);
+      if (res.data?.student?.student_id) {
+        saveStudentId(res.data.student.student_id);
+      }
     } catch (err) {
+      if (err.response?.data?.student_id) {
+        saveStudentId(err.response.data.student_id);
+      }
       const msg = err.response?.data?.error || 'Registration failed. Please check your entered details.';
       setErrorMsg(msg);
     } finally {
