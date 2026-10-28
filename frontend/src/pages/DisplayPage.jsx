@@ -7,7 +7,7 @@ import {
   Tv,
   RotateCcw
 } from 'lucide-react';
-import { MvjLogo, DeveloperCredit } from '../components/Branding';
+import { MvjLogo, DeveloperCredit, QrNicOverlay } from '../components/Branding';
 
 /**
  * SquareCountdownTimer — Prominent square-perimeter countdown outline surrounding the QR code.
@@ -514,12 +514,15 @@ export default function DisplayPage() {
               }}
             >
               {tokenData?.qr_code ? (
-                <img
-                  src={tokenData.qr_code}
-                  alt="Attendance QR Code"
-                  className="h-full w-full object-contain block"
-                  style={{ imageRendering: 'pixelated' }}
-                />
+                <div className="relative w-full h-full flex items-center justify-center">
+                  <img
+                    src={tokenData.qr_code}
+                    alt="Attendance QR Code"
+                    className="h-full w-full object-contain block"
+                    style={{ imageRendering: 'pixelated' }}
+                  />
+                  <QrNicOverlay />
+                </div>
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-[#181512]">
                   <RotateCcw className="h-10 w-10 animate-spin text-amber-400" />

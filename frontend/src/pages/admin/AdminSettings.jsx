@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import AdminLayout from '../../components/AdminLayout';
 import VenueMapPicker from '../../components/VenueMapPicker';
+import { QrNicOverlay } from '../../components/Branding';
 import {
   QrCode,
   Download,
@@ -1075,7 +1076,10 @@ export default function AdminSettings() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
             <div className="flex flex-col items-center text-center">
               <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-xl">
-                <img src={displayQrSrc} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain" />
+                <div className="relative flex items-center justify-center">
+                  <img src={displayQrSrc} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain block" />
+                  <QrNicOverlay />
+                </div>
               </div>
               <span className="mt-3 text-[11px] uppercase tracking-widest text-[#a39b94]">Permanent Static QR</span>
             </div>

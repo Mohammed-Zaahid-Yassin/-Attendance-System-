@@ -20,6 +20,7 @@ import {
   Navigation
 } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
+import { QrNicOverlay } from '../../components/Branding';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
@@ -1268,11 +1269,14 @@ export default function AdminDashboard() {
 
               <div className="mt-6 flex flex-col items-center">
                 <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-lg">
-                  <img
-                    src={displayQrSrc}
-                    alt="Confidential Student Registration Static QR"
-                    className="h-44 w-44 object-contain"
-                  />
+                  <div className="relative flex items-center justify-center">
+                    <img
+                      src={displayQrSrc}
+                      alt="Confidential Student Registration Static QR"
+                      className="h-44 w-44 object-contain block"
+                    />
+                    <QrNicOverlay />
+                  </div>
                 </div>
               </div>
             </div>
