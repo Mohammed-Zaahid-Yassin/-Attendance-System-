@@ -383,23 +383,33 @@ test('Frontend Typography: Shared baseline, concise placeholders, and no clippin
   assert.ok(content.includes('First 4 letters of name'), 'Page must contain reminder that Student ID is first 4 letters of name + last 4 digits of mobile');
 });
 
-test('Frontend Projector Display: ClockRingTimer exported and coordinates verified', () => {
+test('Frontend Projector Display: SquareCountdownTimer exported and coordinates verified', () => {
   const displayPagePath = path.resolve(__dirname, '../../frontend/src/pages/DisplayPage.jsx');
   const content = fs.readFileSync(displayPagePath, 'utf8');
 
-  // Verify ClockRingTimer is exported
-  assert.ok(content.includes('export function ClockRingTimer'), 'ClockRingTimer must be exported');
+  // Verify SquareCountdownTimer is exported
+  assert.ok(content.includes('export function SquareCountdownTimer'), 'SquareCountdownTimer must be exported');
 
   // Verify authoritative timestamps are passed
-  assert.ok(content.includes('issuedAt={tokenData.issued_at}'), 'ClockRingTimer must receive issued_at');
-  assert.ok(content.includes('expiresAt={tokenData.expires_at}'), 'ClockRingTimer must receive expires_at');
-  assert.ok(content.includes('serverTimeOffset={serverTimeOffsetRef.current}'), 'ClockRingTimer must receive serverTimeOffset');
+  assert.ok(content.includes('issuedAt={tokenData.issued_at}'), 'SquareCountdownTimer must receive issued_at');
+  assert.ok(content.includes('expiresAt={tokenData.expires_at}'), 'SquareCountdownTimer must receive expires_at');
+  assert.ok(content.includes('serverTimeOffset={serverTimeOffsetRef.current}'), 'SquareCountdownTimer must receive serverTimeOffset');
 
   // Verify key={tokenData.token} ensures coordinated transition without timer reset on same token
-  assert.ok(content.includes('key={tokenData.token}'), 'ClockRingTimer must use key={tokenData.token}');
+  assert.ok(content.includes('key={tokenData.token}'), 'SquareCountdownTimer must use key={tokenData.token}');
 
   // Verify broken totalMs formula was removed
   assert.ok(!content.includes('(tokenData.expires_at - Date.now() + tokenData.time_remaining_ms)'), 'Broken totalMs calculation must be removed');
+
+  // Verify the old circular countdown is completely removed
+  assert.ok(!content.includes('ClockRingTimer'), 'Old circular ClockRingTimer must be completely removed');
+  assert.ok(!content.includes('strokeLinecap="round"'), 'Circular stroke linecap must be removed');
+
+  // Verify square path geometry exists
+  assert.ok(content.includes('strokeLinejoin="miter"'), 'Square outline must use miter joins for sharp corners');
+
+  // Verify no CSS transition on stroke (was causing stuttering)
+  assert.ok(!content.includes("transition: 'stroke"), 'CSS stroke transition must be removed to prevent stuttering');
 });
 
 test('Backend Static QR Mode: Does not rotate, token remains frozen and valid', () => {

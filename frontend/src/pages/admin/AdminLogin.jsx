@@ -5,7 +5,7 @@ import { Lock, User, ArrowRight } from 'lucide-react';
 
 export default function AdminLogin() {
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();

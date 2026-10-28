@@ -10,26 +10,27 @@ import {
 } from 'lucide-react';
 
 /**
- * ClockRingTimer — High-contrast circular progress countdown outline surrounding the QR code.
+ * SquareCountdownTimer — Thin square-perimeter countdown outline surrounding the QR code.
  *
  * Implements authoritative server-timestamp progress calculation:
  * - t_i: token issuance time (issuedAt)
  * - t_e: token expiration time (expiresAt)
  * - t_n: current time adjusted by server clock skew (Date.now() + serverTimeOffset)
- * - p = clamp((t_n - t_i) / (t_e - t_i), 0, 1)
- * - remaining ms = max(0, t_e - t_n)
+ * - remaining = clamp((t_e - t_n) / (t_e - t_i), 0, 1)
  *
  * Visual geometry:
- * - Clock sweep begins at 12 o'clock (-90°).
- * - Circular endpoint bead travels clockwise along circumference at angle -90° + p * 360°.
- * - High-contrast orange progress arc extends from the moving bead clockwise to 12 o'clock.
- * - Visible arc length is exactly C * (1 - p).
- * - Bead and arc are mathematically unified: the bead is always attached to the arc tip.
- * - Normal: vibrant orange (#f97316).
- * - Last 6 seconds: warning amber (#f59e0b).
- * - Expired: distinct red (#ef4444) with bead hidden.
+ * - Square path starts at top-center, proceeds clockwise: right along top → down right → left along bottom → up left → back to start.
+ * - At 100% remaining, full square outline is visible.
+ * - As time elapses, the visible outline depletes clockwise from the start point.
+ * - No CSS transitions on stroke color — color is computed per-frame to avoid stuttering.
+ *
+ * Color progression (preserved from original):
+ * - 100% remaining: Vibrant Spotlight Orange [249, 115, 22] (#f97316)
+ * - 50% remaining: Pure Electric Yellow [250, 204, 21] (#facc15)
+ * - 25% remaining: High-Contrast Warning Red [239, 68, 68] (#ef4444)
+ * - 0% remaining (expired): Deep Red [220, 38, 38] (#dc2626)
  */
-export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffset = 0, size = 460, onExpire }) {
+export function SquareCountdownTimer({ issuedAt, expiresAt, durationMs, serverTimeOffset = 0, size = 460, strokeWidth = 4, gap = 6, onExpire }) {
   const rafRef = useRef(null);
   const expiredNotifiedRef = useRef(false);
 
@@ -37,11 +38,9 @@ export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffs
     const now = Date.now() + (serverTimeOffset || 0);
     const te = expiresAt;
     const r = Math.max(0, te - now);
-    // Proportion of full amount: use durationMs, or (expiresAt - issuedAt), or dynamic remaining window
     const total = Math.max(1000, durationMs || (issuedAt ? te - issuedAt : 0) || Math.max(30000, r));
     const remainingFraction = Math.max(0, Math.min(1, r / total));
-    const p = 1 - remainingFraction;
-    return { progress: p, remainingMs: r, remainingFraction, totalDuration: total };
+    return { remainingMs: r, remainingFraction };
   }, [issuedAt, expiresAt, durationMs, serverTimeOffset]);
 
   const [state, setState] = useState(computeState);
@@ -86,32 +85,39 @@ export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffs
     };
   }, [tick, computeState, onExpire]);
 
-  const { progress, remainingMs, remainingFraction } = state;
-  const strokeWidth = 9;
-  const radius = Math.max(20, size / 2 - strokeWidth - 6);
+  const { remainingMs, remainingFraction } = state;
+  const isExpired = remainingMs <= 0;
+
+  // Square geometry: the path sits centered in the SVG, inset by gap + half stroke
+  const inset = gap + strokeWidth / 2;
+  const rectSize = size - 2 * inset;
+  const halfW = rectSize / 2;
+
+  // Center of SVG
   const cx = size / 2;
   const cy = size / 2;
-  const circumference = 2 * Math.PI * radius;
 
-  // Clockwise countdown:
-  // As progress goes from 0 to 1, the bead moves clockwise from 12 o'clock (-90°):
-  const angleDeg = -90 + progress * 360;
-  const angleRad = (angleDeg * Math.PI) / 180;
-  const beadX = cx + radius * Math.cos(angleRad);
-  const beadY = cy + radius * Math.sin(angleRad);
+  // Square path starting at top-center, going clockwise:
+  // M (cx, cy - halfW) → right to top-right → down to bottom-right → left to bottom-left → up to top-left → right back to start
+  const x0 = cx;
+  const y0 = cy - halfW;
+  const pathD = [
+    `M ${x0} ${y0}`,
+    `L ${cx + halfW} ${cy - halfW}`,   // top-center → top-right
+    `L ${cx + halfW} ${cy + halfW}`,   // top-right → bottom-right
+    `L ${cx - halfW} ${cy + halfW}`,   // bottom-right → bottom-left
+    `L ${cx - halfW} ${cy - halfW}`,   // bottom-left → top-left
+    `Z`                                 // top-left → back to top-center (start)
+  ].join(' ');
 
-  // Arc starts at the bead (at angleDeg) and extends clockwise to 12 o'clock:
-  // Visible arc length is C * (1 - progress).
-  // With SVG strokeDasharray = [C, C] and strokeDashoffset = C * progress,
-  // rotated by angleDeg: the visible dash begins at angleDeg and ends at -90° (12 o'clock).
-  const dashOffset = circumference * progress;
+  // Total perimeter of the square
+  const perimeter = 4 * rectSize;
 
-  // Smooth multi-step color gradient:
-  // - 100% remaining: Vibrant Spotlight Orange [249, 115, 22] (#f97316)
-  // - 50% remaining (half-time): Pure Electric Yellow [250, 204, 21] (#facc15)
-  // - 25% remaining (quarter-time): High-Contrast Warning Red [239, 68, 68] (#ef4444)
-  // - 0% remaining (expired): Deep Red [220, 38, 38] (#dc2626)
-  const isExpired = remainingMs <= 0 || progress >= 1;
+  // Dash offset: at remainingFraction=1 (full), offset=0 (fully visible).
+  // At remainingFraction=0 (expired), offset=perimeter (fully hidden).
+  const dashOffset = perimeter * (1 - remainingFraction);
+
+  // Smooth multi-step color gradient (identical thresholds & colors as original):
   let rColor, gColor, bColor;
 
   if (isExpired) {
@@ -119,31 +125,30 @@ export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffs
     gColor = 68;
     bColor = 68;
   } else {
-    const f = Math.max(0, Math.min(1, remainingFraction != null ? remainingFraction : (1 - progress)));
+    const f = remainingFraction;
     if (f >= 0.5) {
-      // 100% -> 50%: Smooth blend from Orange to Yellow
-      const t = (1.0 - f) / 0.5; // 0 at f=1.0, 1 at f=0.5
+      // 100% → 50%: Orange to Yellow
+      const t = (1.0 - f) / 0.5;
       rColor = Math.round(249 + (250 - 249) * t);
       gColor = Math.round(115 + (204 - 115) * t);
       bColor = Math.round(22 + (21 - 22) * t);
     } else if (f >= 0.25) {
-      // 50% -> 25%: Smooth blend from Yellow to Red
-      const t = (0.5 - f) / 0.25; // 0 at f=0.5, 1 at f=0.25
+      // 50% → 25%: Yellow to Red
+      const t = (0.5 - f) / 0.25;
       rColor = Math.round(250 + (239 - 250) * t);
       gColor = Math.round(204 + (68 - 204) * t);
       bColor = Math.round(21 + (68 - 21) * t);
     } else {
-      // 25% -> 0%: Smooth deepening from Red to Dark Red
-      const t = (0.25 - f) / 0.25; // 0 at f=0.25, 1 at f=0
+      // 25% → 0%: Red to Dark Red
+      const t = (0.25 - f) / 0.25;
       rColor = Math.round(239 + (220 - 239) * t);
       gColor = Math.round(68 + (38 - 68) * t);
       bColor = Math.round(68 + (38 - 68) * t);
     }
   }
 
-  const ringColor = `rgb(${rColor}, ${gColor}, ${bColor})`;
-  const trackColor = `rgba(${rColor}, ${gColor}, ${bColor}, 0.20)`;
-  const beadGlow = `rgba(${rColor}, ${gColor}, ${bColor}, 0.45)`;
+  const strokeColor = `rgb(${rColor}, ${gColor}, ${bColor})`;
+  const trackColor = `rgba(${rColor}, ${gColor}, ${bColor}, 0.15)`;
 
   return (
     <svg
@@ -157,78 +162,31 @@ export function ClockRingTimer({ issuedAt, expiresAt, durationMs, serverTimeOffs
         pointerEvents: 'none',
         zIndex: 5
       }}
-      aria-label="QR validity countdown ring"
+      aria-label="QR validity countdown"
     >
-      <defs>
-        <filter id="timerGlow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
-          <feComposite in="SourceGraphic" in2="blur" operator="over" />
-        </filter>
-      </defs>
-
-      {/* Outer subtle halo ring */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={radius + strokeWidth / 2 + 1}
-        fill="none"
-        stroke={isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.08)'}
-        strokeWidth={1}
-      />
-
-      {/* Subdued but clearly visible background track for entire circumference */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={radius}
+      {/* Background track: full square outline at low opacity */}
+      <path
+        d={pathD}
         fill="none"
         stroke={trackColor}
         strokeWidth={strokeWidth}
+        strokeLinejoin="miter"
       />
 
-      {/* 12 o'clock origin/target anchor marker */}
-      <circle
-        cx={cx}
-        cy={cy - radius}
-        r={3}
-        fill={isExpired ? '#ef4444' : 'rgba(255, 235, 215, 0.45)'}
-      />
-
-      {/* Active High-Contrast Progress Arc */}
-      {!isExpired && progress < 1 && (
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
+      {/* Active countdown stroke: depletes clockwise from top-center */}
+      {!isExpired && (
+        <path
+          d={pathD}
           fill="none"
-          stroke={ringColor}
+          stroke={strokeColor}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
+          strokeLinejoin="miter"
+          strokeDasharray={perimeter}
           strokeDashoffset={dashOffset}
-          transform={`rotate(${angleDeg} ${cx} ${cy})`}
           style={{
-            filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.5))',
-            transition: 'stroke 0.3s ease'
+            filter: `drop-shadow(0 0 3px rgba(${rColor}, ${gColor}, ${bColor}, 0.4))`
           }}
         />
-      )}
-
-      {/* Moving Circular Endpoint Bead Indicator */}
-      {!isExpired && progress < 1 && (
-        <g>
-          {/* Outer glow ring */}
-          <circle cx={beadX} cy={beadY} r={10} fill={beadGlow} />
-          {/* Main bead marker */}
-          <circle
-            cx={beadX}
-            cy={beadY}
-            r={6}
-            fill={ringColor}
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-        </g>
       )}
     </svg>
   );
@@ -257,34 +215,40 @@ export default function DisplayPage() {
     activeTokenRef.current = tokenData;
   }, [tokenData]);
 
-  // ── Measure available space for QR and surrounding countdown ring ────
+  // ── Measure available space for QR — maximize QR size ────────────────
+  // The old formula wasted ~44% of available space on the circular ring.
+  // Now the square outline is only strokeWidth + gap outside the QR, so we
+  // can give nearly all available space directly to the QR image.
+  const OUTLINE_STROKE = 4;
+  const OUTLINE_GAP = 6;
+  const OUTLINE_OVERHEAD = 2 * (OUTLINE_GAP + OUTLINE_STROKE); // ~20px total
+
   const measure = useCallback(() => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const isWidescreen = vw >= 1024;
 
-    let availableW;
-    let availableH;
-    let maxOuter;
+    let maxQr;
 
     if (isWidescreen) {
       // Side-by-side layout:
-      // Side panel takes ~380px + gap (~48px) + outer padding (~48px) ≈ 480px
-      // Vertical space: header (~70px) + footer (~40px) + py margins (~40px) ≈ 150px
-      availableW = Math.max(260, vw - 480);
-      availableH = Math.max(260, vh - 150);
-      // Allow QR ring up to 760px on high-res displays/projectors without clipping
-      maxOuter = Math.min(availableW, availableH, 760);
+      // Side panel takes ~380px + gap (~32px) + outer padding (~32px) ≈ 444px
+      // Vertical space: header (~66px) + footer (~36px) + py margins (~24px) ≈ 126px
+      const availableW = Math.max(260, vw - 444);
+      const availableH = Math.max(260, vh - 126);
+      // QR can be up to the smaller of available width/height, minus outline overhead
+      maxQr = Math.min(availableW, availableH) - OUTLINE_OVERHEAD;
+      // Cap at 900px — beyond this returns diminish at typical projector resolutions
+      maxQr = Math.min(maxQr, 900);
     } else {
       // Stacked layout for mobile / tablet portrait
-      availableW = vw * 0.88;
-      availableH = vh * 0.44;
-      maxOuter = Math.min(availableW, availableH, 440);
+      const availableW = vw * 0.92;
+      const availableH = vh * 0.50;
+      maxQr = Math.min(availableW, availableH) - OUTLINE_OVERHEAD;
+      maxQr = Math.min(maxQr, 500);
     }
 
-    // Ring outer diameter is Math.ceil(qr * 1.44 + 32), so derive qr from maxOuter:
-    const computedQr = Math.floor(Math.max(180, (maxOuter - 32) / 1.44));
-    setQrContainerSize(computedQr);
+    setQrContainerSize(Math.floor(Math.max(200, maxQr)));
   }, []);
 
   useEffect(() => {
@@ -441,6 +405,9 @@ export default function DisplayPage() {
     tokenData?.is_static === true
   );
 
+  // The outline SVG size = QR + outline overhead
+  const outlineSvgSize = qrContainerSize + OUTLINE_OVERHEAD;
+
   return (
     <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-6 select-none">
       {/* Top Bar */}
@@ -499,62 +466,66 @@ export default function DisplayPage() {
 
       {/* Main Display: Responsive side-by-side on projector/widescreen, stacked on mobile */}
       <main className="flex flex-1 flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 py-2 sm:py-3 px-2 sm:px-4 w-full max-w-[1600px] mx-auto">
-        {/* QR Code + Integrated Countdown Ring */}
+        {/* QR Code + Square Countdown Outline */}
         <div className="flex flex-col items-center justify-center shrink-0">
-          {(() => {
-            const ringOuterSize = Math.ceil(qrContainerSize * 1.44 + 32);
-            return (
+          <div
+            ref={qrWrapRef}
+            className="relative flex items-center justify-center"
+            style={{ width: outlineSvgSize, height: outlineSvgSize }}
+          >
+            {/* Square countdown SVG surrounding the QR code */}
+            {!isStaticQr && tokenData?.expires_at && (
+              <SquareCountdownTimer
+                key={tokenData.token}
+                issuedAt={tokenData.issued_at}
+                expiresAt={tokenData.expires_at}
+                durationMs={tokenData.duration_ms}
+                serverTimeOffset={serverTimeOffsetRef.current}
+                size={outlineSvgSize}
+                strokeWidth={OUTLINE_STROKE}
+                gap={OUTLINE_GAP}
+                onExpire={handleTokenExpire}
+              />
+            )}
+
+            {/* Static QR mode: prominent green square status outline instead */}
+            {isStaticQr && (
               <div
-                ref={qrWrapRef}
-                className="relative flex items-center justify-center"
-                style={{ width: ringOuterSize, height: ringOuterSize }}
-              >
-                {/* Clock ring SVG surrounding the QR code */}
-                {!isStaticQr && tokenData?.expires_at && (
-                  <ClockRingTimer
-                    key={tokenData.token}
-                    issuedAt={tokenData.issued_at}
-                    expiresAt={tokenData.expires_at}
-                    durationMs={tokenData.duration_ms}
-                    serverTimeOffset={serverTimeOffsetRef.current}
-                    size={ringOuterSize}
-                    onExpire={handleTokenExpire}
-                  />
-                )}
+                className="absolute border-2 border-emerald-500/40 animate-pulse pointer-events-none"
+                style={{
+                  width: qrContainerSize + 2 * OUTLINE_GAP,
+                  height: qrContainerSize + 2 * OUTLINE_GAP,
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)'
+                }}
+              />
+            )}
 
-                {/* Static QR mode: prominent green status ring instead */}
-                {isStaticQr && (
-                  <div
-                    className="absolute rounded-full border-2 border-emerald-500/40 animate-pulse pointer-events-none"
-                    style={{ width: ringOuterSize - 16, height: ringOuterSize - 16 }}
-                  />
-                )}
-
-                {/* QR Image card */}
-                <div
-                  className="relative z-10 rounded-2xl bg-white shadow-2xl overflow-hidden border border-[rgba(255,235,215,0.2)]"
-                  style={{
-                    width: qrContainerSize,
-                    height: qrContainerSize,
-                    padding: Math.floor(qrContainerSize * 0.025)
-                  }}
-                >
-                  {tokenData?.qr_code ? (
-                    <img
-                      src={tokenData.qr_code}
-                      alt="Attendance QR Code"
-                      className="h-full w-full object-contain block"
-                      style={{ imageRendering: 'pixelated' }}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[#181512] rounded-xl">
-                      <RotateCcw className="h-10 w-10 animate-spin text-amber-400" />
-                    </div>
-                  )}
+            {/* QR Image card — sharp square corners for maximum scan clarity */}
+            <div
+              className="relative z-10 bg-white shadow-2xl overflow-hidden"
+              style={{
+                width: qrContainerSize,
+                height: qrContainerSize,
+                padding: Math.floor(qrContainerSize * 0.02),
+                borderRadius: 0
+              }}
+            >
+              {tokenData?.qr_code ? (
+                <img
+                  src={tokenData.qr_code}
+                  alt="Attendance QR Code"
+                  className="h-full w-full object-contain block"
+                  style={{ imageRendering: 'pixelated' }}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-[#181512]">
+                  <RotateCcw className="h-10 w-10 animate-spin text-amber-400" />
                 </div>
-              </div>
-            );
-          })()}
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Side Panel: Screen PIN, Student ID Reminder & Instructions (always visible in fullscreen) */}
