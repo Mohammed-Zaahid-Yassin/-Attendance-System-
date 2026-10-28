@@ -71,10 +71,22 @@ export default function LiveAttendance() {
   const [isLivePolling, setIsLivePolling] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Manual mark state
+  // Manual mark state: 'registered' | 'unregistered'
+  const [manualMode, setManualMode] = useState('registered');
   const [manualStudentId, setManualStudentId] = useState('');
+  const [manualRemarks, setManualRemarks] = useState('');
   const [manualLoading, setManualLoading] = useState(false);
   const [manualMsg, setManualMsg] = useState('');
+  const [manualMsgType, setManualMsgType] = useState('info'); // 'success' | 'error' | 'info'
+
+  // Unregistered student form fields
+  const [unregName, setUnregName] = useState('');
+  const [unregUsn, setUnregUsn] = useState('');
+  const [unregYear, setUnregYear] = useState('2');
+  const [unregCycle, setUnregCycle] = useState('Physics Cycle');
+  const [unregDept, setUnregDept] = useState('Computer Science and Engineering (CSE)');
+  const [unregMobile, setUnregMobile] = useState('');
+  const [unregRemarks, setUnregRemarks] = useState('');
 
   // Edit attendance record state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -203,32 +215,110 @@ export default function LiveAttendance() {
     }
   };
 
-  // Manual Override: Mark student attendance manually
+  // Manual Override: Mark registered student attendance manually
   const handleManualMark = async (e) => {
     e.preventDefault();
-    if (!manualStudentId.trim()) return;
+    if (!manualStudentId.trim() || !selectedSessionId) return;
 
     setManualLoading(true);
     setManualMsg('');
+    setManualMsgType('info');
 
     try {
       const res = await axios.post(
         '/api/admin/attendance/manual-mark',
         {
           session_id: parseInt(selectedSessionId, 10),
-          student_id: manualStudentId.trim().toUpperCase()
+          student_id: manualStudentId.trim().toUpperCase(),
+          remarks: manualRemarks.trim() || 'Manual entry by administrator'
         },
         axiosConfig
       );
 
       setManualMsg(res.data.message || 'Attendance manually marked!');
+      setManualMsgType('success');
       setManualStudentId('');
+      setManualRemarks('');
 
       // Refresh records
       const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
       setRecords(freshRes.data.records || []);
     } catch (err) {
       setManualMsg(err.response?.data?.error || 'Failed to mark student manually');
+      setManualMsgType('error');
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
+  // Manual Entry: Add and mark attendance for an unregistered / walk-in student
+  const handleManualUnregistered = async (e) => {
+    e.preventDefault();
+    if (!unregName.trim() || !unregUsn.trim() || !selectedSessionId) {
+      setManualMsg('Please fill in required fields (Student Full Name and USN).');
+      setManualMsgType('error');
+      return;
+    }
+
+    const yr = parseInt(unregYear, 10);
+    let finalDept = unregDept.trim();
+    let finalCycle = null;
+
+    if (yr === 1) {
+      finalCycle = unregCycle || 'Physics Cycle';
+      finalDept = `Basic Sciences (${finalCycle})`;
+    } else {
+      if (!finalDept || finalDept === 'ALL') {
+        setManualMsg('Please select an engineering department for Year 2, 3, or 4.');
+        setManualMsgType('error');
+        return;
+      }
+    }
+
+    if (unregMobile.trim()) {
+      const cleanMob = unregMobile.replace(/\D/g, '');
+      if (cleanMob.length < 10) {
+        setManualMsg('Mobile number must be at least 10 digits if provided.');
+        setManualMsgType('error');
+        return;
+      }
+    }
+
+    setManualLoading(true);
+    setManualMsg('');
+    setManualMsgType('info');
+
+    try {
+      const res = await axios.post(
+        '/api/admin/attendance/manual-unregistered',
+        {
+          session_id: parseInt(selectedSessionId, 10),
+          name: unregName.trim(),
+          usn: unregUsn.trim().toUpperCase(),
+          year: yr,
+          cycle: finalCycle,
+          department: finalDept,
+          mobile: unregMobile.trim(),
+          remarks: unregRemarks.trim() || 'Unregistered walk-in attendee'
+        },
+        axiosConfig
+      );
+
+      setManualMsg(res.data.message || 'Unregistered student attendance recorded successfully!');
+      setManualMsgType('success');
+
+      // Clear fields on success
+      setUnregName('');
+      setUnregUsn('');
+      setUnregMobile('');
+      setUnregRemarks('');
+
+      // Refresh records
+      const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
+      setRecords(freshRes.data.records || []);
+    } catch (err) {
+      setManualMsg(err.response?.data?.error || 'Failed to record unregistered student attendance');
+      setManualMsgType('error');
     } finally {
       setManualLoading(false);
     }
@@ -291,7 +381,11 @@ export default function LiveAttendance() {
         (r.name || '').toLowerCase().includes(s) ||
         (r.student_id || '').toLowerCase().includes(s) ||
         (r.usn || '').toLowerCase().includes(s) ||
-        (r.department || '').toLowerCase().includes(s);
+        (r.department || '').toLowerCase().includes(s) ||
+        (r.remarks || '').toLowerCase().includes(s) ||
+        (s === 'unregistered' && r.is_registered === 0) ||
+        (s === 'walk-in' && r.is_registered === 0) ||
+        (s === 'registered' && (r.is_registered === 1 || r.is_registered === null));
 
       const matchesDept = selectedDept === 'ALL' || r.department === selectedDept;
       const matchesYear = selectedYear === 'ALL' || String(r.year) === String(selectedYear);
@@ -397,15 +491,27 @@ export default function LiveAttendance() {
               </div>
 
               {sessionData && (
-                <div className="flex items-center gap-4 text-xs">
+                <div className="flex flex-wrap items-center gap-4 text-xs">
                   <div>
-                    <span className="text-[#a39b94] block text-[10px] uppercase">Headcount</span>
+                    <span className="text-[#a39b94] block text-[10px] uppercase tracking-wider">Headcount</span>
                     <span className="font-mono text-2xl font-bold text-amber-400">
                       {records.length}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-[#a39b94] block text-[10px] uppercase">Last Polled</span>
+                  <div className="border-l border-[rgba(255,235,215,0.1)] pl-3">
+                    <span className="text-[#a39b94] block text-[10px] uppercase tracking-wider">Registered</span>
+                    <span className="font-mono text-base font-semibold text-emerald-400">
+                      {records.filter(r => r.is_registered === 1 || r.is_registered === null).length}
+                    </span>
+                  </div>
+                  <div className="border-l border-[rgba(255,235,215,0.1)] pl-3">
+                    <span className="text-[#a39b94] block text-[10px] uppercase tracking-wider">Walk-ins</span>
+                    <span className="font-mono text-base font-semibold text-amber-400">
+                      {records.filter(r => r.is_registered === 0).length}
+                    </span>
+                  </div>
+                  <div className="border-l border-[rgba(255,235,215,0.1)] pl-3">
+                    <span className="text-[#a39b94] block text-[10px] uppercase tracking-wider">Last Polled</span>
                     <span className="font-mono text-xs text-[#f5f0ea]">
                       {lastUpdated || 'Connecting...'}
                     </span>
@@ -415,30 +521,228 @@ export default function LiveAttendance() {
             </div>
           </div>
 
-          {/* Right: Manual Attendance Override */}
-          <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5">
-            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-400 mb-2">
-              <UserPlus className="h-4 w-4" />
-              <span>Manual Attendance Override</span>
+          {/* Right: Manual Attendance (Registered & Unregistered / Walk-ins) */}
+          <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-400">
+                <UserPlus className="h-4 w-4" />
+                <span>Manual Attendance</span>
+              </div>
+              <span className="text-[10px] text-[#706860]">
+                {manualMode === 'registered' ? 'Registered Roster' : 'Walk-in / Unregistered'}
+              </span>
             </div>
-            <form onSubmit={handleManualMark} className="space-y-2">
-              <input
-                type="text"
-                placeholder="Student ID (e.g. ARJU3210)"
-                value={manualStudentId}
-                onChange={(e) => setManualStudentId(e.target.value.toUpperCase())}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
-              />
+
+            {/* Mode Switch Tabs */}
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-[#181512] border border-[rgba(255,235,215,0.08)] text-[11px] font-medium">
               <button
-                type="submit"
-                disabled={manualLoading || !manualStudentId.trim()}
-                className="w-full rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2 text-xs font-semibold uppercase tracking-wider text-amber-400 hover:bg-amber-500/20 transition disabled:opacity-40"
+                type="button"
+                onClick={() => {
+                  setManualMode('registered');
+                  setManualMsg('');
+                }}
+                className={`py-1.5 rounded-lg transition text-center ${
+                  manualMode === 'registered'
+                    ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
+                    : 'text-[#a39b94] hover:text-[#f5f0ea]'
+                }`}
               >
-                {manualLoading ? 'Marking...' : 'Add Attendance'}
+                Registered Student
               </button>
-            </form>
+              <button
+                type="button"
+                onClick={() => {
+                  setManualMode('unregistered');
+                  setManualMsg('');
+                }}
+                className={`py-1.5 rounded-lg transition text-center ${
+                  manualMode === 'unregistered'
+                    ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
+                    : 'text-[#a39b94] hover:text-[#f5f0ea]'
+                }`}
+              >
+                + Add Unregistered
+              </button>
+            </div>
+
+            {/* Registered Student Form */}
+            {manualMode === 'registered' ? (
+              <form onSubmit={handleManualMark} className="space-y-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                    Student ID or USN *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ARJU3210 or 1MJ23CS045"
+                    value={manualStudentId}
+                    onChange={(e) => setManualStudentId(e.target.value.toUpperCase())}
+                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                    Remarks (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Device dead, Scan issue"
+                    value={manualRemarks}
+                    onChange={(e) => setManualRemarks(e.target.value)}
+                    className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={manualLoading || !manualStudentId.trim() || !selectedSessionId}
+                  className="w-full rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2 text-xs font-semibold uppercase tracking-wider text-amber-400 hover:bg-amber-500/20 transition disabled:opacity-40"
+                >
+                  {manualLoading ? 'Marking...' : 'Mark Registered Attendance'}
+                </button>
+              </form>
+            ) : (
+              /* Unregistered / Walk-in Student Form */
+              <form onSubmit={handleManualUnregistered} className="space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Rahul Sharma"
+                      value={unregName}
+                      onChange={(e) => setUnregName(e.target.value)}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                      USN / Student ID *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 1MJ23CS099"
+                      value={unregUsn}
+                      onChange={(e) => setUnregUsn(e.target.value.toUpperCase())}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                      Year *
+                    </label>
+                    <select
+                      value={unregYear}
+                      onChange={(e) => setUnregYear(e.target.value)}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-2.5 py-1.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                    >
+                      <option value="1">1st Year</option>
+                      <option value="2">2nd Year</option>
+                      <option value="3">3rd Year</option>
+                      <option value="4">4th Year</option>
+                    </select>
+                  </div>
+
+                  {unregYear === '1' ? (
+                    <div>
+                      <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                        Cycle *
+                      </label>
+                      <select
+                        value={unregCycle}
+                        onChange={(e) => setUnregCycle(e.target.value)}
+                        className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-2.5 py-1.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                      >
+                        <option value="Physics Cycle">Physics Cycle</option>
+                        <option value="Chemistry Cycle">Chemistry Cycle</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                        Department *
+                      </label>
+                      <select
+                        value={unregDept}
+                        onChange={(e) => setUnregDept(e.target.value)}
+                        className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-2.5 py-1.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none truncate"
+                      >
+                        {MVJCE_SCHOOLS.filter(s => s.school !== 'School of Basic Sciences (1st Year Cycles)').map(school => (
+                          <optgroup key={school.school} label={school.school} className="bg-[#120f0d] text-amber-400 font-semibold">
+                            {school.departments.map(dept => (
+                              <option key={dept} value={dept} className="bg-[#181512] text-[#f5f0ea] font-normal">
+                                {dept}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                      Mobile (Optional)
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="10-digit number"
+                      value={unregMobile}
+                      onChange={(e) => setUnregMobile(e.target.value)}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
+                      Remarks (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Unregistered walk-in"
+                      value={unregRemarks}
+                      onChange={(e) => setUnregRemarks(e.target.value)}
+                      className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-1.5 text-xs text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={manualLoading || !unregName.trim() || !unregUsn.trim() || !selectedSessionId}
+                  className="w-full rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-amber-600/20 py-2 text-xs font-semibold uppercase tracking-wider text-amber-300 hover:from-amber-500/30 hover:to-amber-600/30 transition disabled:opacity-40"
+                >
+                  {manualLoading ? 'Saving & Marking...' : 'Mark Unregistered Attendance'}
+                </button>
+              </form>
+            )}
+
+            {/* Status / Feedback alert */}
             {manualMsg && (
-              <p className="mt-2 text-[11px] text-[#a39b94]">{manualMsg}</p>
+              <div
+                className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                  manualMsgType === 'success'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : manualMsgType === 'error'
+                    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                }`}
+              >
+                {manualMsgType === 'success' ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                )}
+                <span className="flex-1 text-[11px] leading-tight">{manualMsg}</span>
+              </div>
             )}
           </div>
         </div>
@@ -587,7 +891,30 @@ export default function LiveAttendance() {
                   filteredRecords.map((r, i) => (
                     <tr key={r.id} className="hover:bg-[#181512]/60 transition">
                       <td className="px-5 py-3.5 font-mono text-[#706860]">{i + 1}</td>
-                      <td className="px-5 py-3.5 font-medium">{r.name}</td>
+                      <td className="px-5 py-3.5 font-medium">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{r.name}</span>
+                          {r.is_registered === 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[9px] font-semibold text-amber-300 uppercase tracking-wider">
+                              Unregistered
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">
+                              Registered
+                            </span>
+                          )}
+                          {(r.is_manual === 1 || (r.token_used && r.token_used.startsWith('MANUAL'))) && (
+                            <span className="inline-flex items-center rounded-full bg-zinc-800 border border-zinc-700/60 px-1.5 py-0.5 text-[9px] font-mono text-zinc-300">
+                              Manual
+                            </span>
+                          )}
+                        </div>
+                        {r.remarks && (
+                          <div className="text-[10px] text-[#8c827a] italic mt-0.5 max-w-[200px] truncate" title={r.remarks}>
+                            {r.remarks}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-5 py-3.5 font-mono font-bold text-amber-400">
                         {r.student_id}
                       </td>

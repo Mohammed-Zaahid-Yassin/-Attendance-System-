@@ -9,6 +9,7 @@ export default function StudentRoster() {
   const [search, setSearch] = useState('');
   const [yearFilter, setYearFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(''); // '' (all) | 'registered' | 'unregistered'
   const [loading, setLoading] = useState(true);
 
   // Edit student modal state
@@ -20,6 +21,7 @@ export default function StudentRoster() {
   const [editYear, setEditYear] = useState(1);
   const [editCycle, setEditCycle] = useState('');
   const [editMobile, setEditMobile] = useState('');
+  const [editIsRegistered, setEditIsRegistered] = useState(1);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -35,6 +37,7 @@ export default function StudentRoster() {
       if (search) params.search = search;
       if (yearFilter) params.year = yearFilter;
       if (deptFilter) params.department = deptFilter;
+      if (statusFilter) params.registration_status = statusFilter;
 
       const res = await axios.get('/api/admin/students', {
         ...axiosConfig,
@@ -50,7 +53,7 @@ export default function StudentRoster() {
 
   useEffect(() => {
     fetchStudents();
-  }, [yearFilter, deptFilter]);
+  }, [yearFilter, deptFilter, statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -80,6 +83,7 @@ export default function StudentRoster() {
     setEditCycle(cyc);
     setEditDept(yr === 1 ? `Basic Sciences (${cyc})` : (student.department || ''));
     setEditMobile(student.mobile || '');
+    setEditIsRegistered(student.is_registered === 0 ? 0 : 1);
     setEditError('');
   };
 
@@ -109,7 +113,8 @@ export default function StudentRoster() {
           department: finalDept,
           year: yr,
           cycle: finalCycle,
-          mobile: editMobile.trim()
+          mobile: editMobile.trim(),
+          is_registered: editIsRegistered
         },
         axiosConfig
       );
@@ -155,7 +160,7 @@ export default function StudentRoster() {
 
         {/* Filter & Search Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-          <form onSubmit={handleSearchSubmit} className="relative sm:col-span-6">
+          <form onSubmit={handleSearchSubmit} className="relative sm:col-span-12 md:col-span-4">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#706860]" />
             <input
               type="text"
@@ -167,7 +172,7 @@ export default function StudentRoster() {
           </form>
 
           {/* Department Filter */}
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-6 md:col-span-3">
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
@@ -197,18 +202,32 @@ export default function StudentRoster() {
           </div>
 
           {/* Year Filter */}
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-3 md:col-span-2">
             <select
               value={yearFilter}
               onChange={(e) => setYearFilter(e.target.value)}
               aria-label="Filter roster by academic year"
               className="w-full min-h-[44px] rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
             >
-              <option value="">All Academic Years</option>
+              <option value="">All Years</option>
               <option value="1">1st Year Only</option>
               <option value="2">2nd Year Only</option>
               <option value="3">3rd Year Only</option>
               <option value="4">4th Year Only</option>
+            </select>
+          </div>
+
+          {/* Registration Status Filter */}
+          <div className="sm:col-span-3 md:col-span-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter roster by registration status"
+              className="w-full min-h-[44px] rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+            >
+              <option value="">All Categories (Reg & Walk-in)</option>
+              <option value="registered">Registered Students Only</option>
+              <option value="unregistered">Unregistered Walk-ins Only</option>
             </select>
           </div>
         </div>
@@ -246,7 +265,20 @@ export default function StudentRoster() {
                   students.map((s, index) => (
                     <tr key={s.id} className="hover:bg-[#181512]/60 transition">
                       <td className="px-5 py-3.5 font-mono text-[#706860]">{index + 1}</td>
-                      <td className="px-5 py-3.5 font-medium">{s.name}</td>
+                      <td className="px-5 py-3.5 font-medium">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{s.name}</span>
+                          {s.is_registered === 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[9px] font-semibold text-amber-300 uppercase tracking-wider">
+                              Unregistered
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">
+                              Registered
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-5 py-3.5 font-mono font-bold text-amber-400">
                         {s.student_id}
                       </td>
@@ -447,6 +479,20 @@ export default function StudentRoster() {
                     </select>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  Registration Category
+                </label>
+                <select
+                  value={editIsRegistered}
+                  onChange={(e) => setEditIsRegistered(parseInt(e.target.value, 10))}
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                >
+                  <option value={1}>Registered Student</option>
+                  <option value={0}>Unregistered / Walk-in Student</option>
+                </select>
               </div>
 
               <div className="flex gap-2 pt-3">

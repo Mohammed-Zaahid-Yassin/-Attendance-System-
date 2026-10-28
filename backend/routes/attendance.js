@@ -281,22 +281,32 @@ router.get('/attendance/live/:sessionId', (req, res) => {
       a.lat,
       a.lng,
       a.geo_verified,
+      a.is_manual,
+      a.remarks,
+      a.token_used,
+      a.marked_by,
       s.student_id,
       s.name,
       s.usn,
       s.department,
       s.year,
       s.cycle,
-      s.mobile
+      s.mobile,
+      s.is_registered
     FROM attendance a
     JOIN students s ON a.student_id = s.student_id
     WHERE a.session_id = ?
     ORDER BY a.id DESC
   `).all(sessionId);
 
+  const registeredCount = records.filter(r => r.is_registered === 1 || r.is_registered === null).length;
+  const unregisteredCount = records.filter(r => r.is_registered === 0).length;
+
   return res.json({
     session,
     count: records.length,
+    registered_count: registeredCount,
+    unregistered_count: unregisteredCount,
     records
   });
 });
@@ -324,8 +334,12 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
       s.year,
       s.cycle,
       s.mobile,
+      s.is_registered,
       a.marked_at,
-      a.geo_verified
+      a.geo_verified,
+      a.is_manual,
+      a.remarks,
+      a.token_used
     FROM attendance a
     JOIN students s ON a.student_id = s.student_id
     WHERE a.session_id = ?
@@ -344,16 +358,19 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
   const records = db.prepare(query).all(...params);
 
   // Generate CSV rows
-  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Marked At', 'Geo Verified'];
+  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Registration Status', 'Entry Type', 'Remarks', 'Marked At', 'Geo Verified'];
   const rows = records.map((r, index) => [
     index + 1,
     `"${r.student_id}"`,
-    `"${r.name.replace(/"/g, '""')}"`,
-    `"${r.usn}"`,
-    `"${r.department}"`,
+    `"${(r.name || '').replace(/"/g, '""')}"`,
+    `"${r.usn || ''}"`,
+    `"${r.department || ''}"`,
     r.year,
     `"${r.cycle || 'N/A'}"`,
-    `"${r.mobile}"`,
+    `"${r.mobile || 'N/A'}"`,
+    `"${r.is_registered === 0 ? 'Unregistered / Walk-in' : 'Registered'}"`,
+    `"${r.is_manual || (r.token_used && r.token_used.startsWith('MANUAL')) ? 'Manual Entry' : 'QR Scan'}"`,
+    `"${(r.remarks || '').replace(/"/g, '""')}"`,
     `"${r.marked_at}"`,
     r.geo_verified ? 'Yes' : 'No'
   ]);
@@ -432,8 +449,12 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
       s.year,
       s.cycle,
       s.mobile,
+      s.is_registered,
       a.marked_at,
-      a.geo_verified
+      a.geo_verified,
+      a.is_manual,
+      a.remarks,
+      a.token_used
     FROM attendance a
     JOIN students s ON a.student_id = s.student_id
     WHERE a.session_id = ?
@@ -451,7 +472,7 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
 
   const records = db.prepare(query).all(...params);
 
-  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Marked At', 'Geo Verified'];
+  const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Registration Status', 'Entry Type', 'Remarks', 'Marked At', 'Geo Verified'];
   const data = [
     headers,
     ...records.map((r, index) => [
@@ -462,7 +483,10 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
       r.department,
       r.year,
       r.cycle || 'N/A',
-      r.mobile,
+      r.mobile || 'N/A',
+      r.is_registered === 0 ? 'Unregistered / Walk-in' : 'Registered',
+      r.is_manual || (r.token_used && r.token_used.startsWith('MANUAL')) ? 'Manual Entry' : 'QR Scan',
+      r.remarks || '',
       r.marked_at,
       r.geo_verified ? 'Yes' : 'No'
     ])
@@ -477,10 +501,13 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
     { wch: 14 },
     { wch: 24 },
     { wch: 18 },
-    { wch: 22 },
+    { wch: 24 },
     { wch: 8 },
-    { wch: 10 },
+    { wch: 12 },
     { wch: 14 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 24 },
     { wch: 22 },
     { wch: 14 }
   ];

@@ -329,19 +329,39 @@ router.patch('/sessions/:id/toggle-static-qr', (req, res) => {
   });
 });
 
-// 7. Manual Attendance Override / Error Correction
+// Helper for walk-in student ID generation: first 4 uppercase letters of Name + 4 digits from mobile or USN
+function computeStudentIDForWalkin(name, mobile, usn) {
+  const cleanName = (name || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+  const namePart = cleanName.length >= 4 ? cleanName.substring(0, 4) : cleanName.padEnd(4, 'X');
+
+  let suffix = '';
+  const cleanMobile = (mobile || '').replace(/\D/g, '');
+  if (cleanMobile.length >= 4) {
+    suffix = cleanMobile.slice(-4);
+  } else {
+    const cleanUsnDigits = (usn || '').replace(/\D/g, '');
+    if (cleanUsnDigits.length >= 4) {
+      suffix = cleanUsnDigits.slice(-4);
+    } else {
+      suffix = cleanUsnDigits.padStart(4, '0');
+    }
+  }
+  return `${namePart}${suffix}`;
+}
+
+// 7. Manual Attendance Override / Error Correction (Registered students or by Student ID / USN)
 // Add attendance manually for a student who had a device/scan issue
 router.post('/attendance/manual-mark', (req, res) => {
-  const { session_id, student_id } = req.body;
+  const { session_id, student_id, usn, remarks } = req.body;
 
-  if (!session_id || !student_id) {
-    return res.status(400).json({ error: 'Session ID and Student ID are required' });
+  const lookupKey = (student_id || usn || '').trim().toUpperCase();
+  if (!session_id || !lookupKey) {
+    return res.status(400).json({ error: 'Session ID and Student ID or USN are required' });
   }
 
-  const cleanStudentId = student_id.trim().toUpperCase();
-  const student = db.prepare('SELECT * FROM students WHERE student_id = ?').get(cleanStudentId);
+  const student = db.prepare('SELECT * FROM students WHERE student_id = ? OR usn = ?').get(lookupKey, lookupKey);
   if (!student) {
-    return res.status(404).json({ error: 'Student ID not found in roster' });
+    return res.status(404).json({ error: 'Student not found in roster with ID or USN: ' + lookupKey });
   }
 
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
@@ -349,22 +369,178 @@ router.post('/attendance/manual-mark', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
+  const adminName = (req.admin && req.admin.username) ? req.admin.username : 'admin';
+  const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual entry by administrator';
+  const tokenUsed = student.is_registered === 0 ? 'MANUAL_UNREGISTERED' : 'MANUAL_ADMIN_OVERRIDE';
+
   try {
     const insertStmt = db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used)
-      VALUES (?, ?, 1, 'MANUAL_ADMIN_OVERRIDE')
+      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
+      VALUES (?, ?, 1, ?, 1, ?, ?)
     `);
-    insertStmt.run(session_id, cleanStudentId);
+    insertStmt.run(session_id, student.student_id, tokenUsed, customRemarks, adminName);
 
     return res.json({
       success: true,
-      message: `Manually marked attendance for ${student.name} (${student.student_id})`
+      message: `Manually marked attendance for ${student.name} (${student.student_id})`,
+      student,
+      is_registered: student.is_registered !== 0
     });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
-      return res.status(409).json({ error: 'Attendance already marked for this student in this session' });
+      return res.status(409).json({ error: `Attendance already marked for ${student.name} (${student.student_id}) in this session` });
     }
     return res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// 7b. Manual Attendance for Unregistered / Walk-in Students
+router.post('/attendance/manual-unregistered', (req, res) => {
+  const { session_id, name, usn, department, year, cycle, mobile, remarks } = req.body;
+
+  if (!session_id) {
+    return res.status(400).json({ error: 'Session ID is required' });
+  }
+
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  // Validate required inputs
+  const trimmedName = (name || '').trim();
+  const cleanUsn = (usn || '').trim().toUpperCase();
+
+  if (!trimmedName) {
+    return res.status(400).json({ error: 'Student full name is required' });
+  }
+  if (!cleanUsn) {
+    return res.status(400).json({ error: 'USN / Student ID is required' });
+  }
+
+  const numYear = parseInt(year, 10);
+  if (isNaN(numYear) || numYear < 1 || numYear > 4) {
+    return res.status(400).json({ error: 'Year of study must be between 1 and 4' });
+  }
+
+  let studentCycle = null;
+  let finalDepartment = (department || '').trim();
+
+  if (numYear === 1) {
+    if (!cycle || (!cycle.includes('Physics') && !cycle.includes('Chemistry'))) {
+      return res.status(400).json({ error: '1st Year students must specify Cycle (Physics Cycle or Chemistry Cycle)' });
+    }
+    studentCycle = cycle.includes('Physics') ? 'Physics Cycle' : 'Chemistry Cycle';
+    finalDepartment = `Basic Sciences (${studentCycle})`;
+  } else {
+    if (!finalDepartment || finalDepartment === 'ALL') {
+      return res.status(400).json({ error: 'Department is required for Year 2, 3, and 4 students' });
+    }
+  }
+
+  // Mobile validation (optional, but if provided must be valid)
+  let cleanMobile = '';
+  if (mobile && String(mobile).trim()) {
+    cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length < 10) {
+      return res.status(400).json({ error: 'Mobile number must be at least 10 digits if provided' });
+    }
+  }
+
+  const adminName = (req.admin && req.admin.username) ? req.admin.username : 'admin';
+  const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual unregistered walk-in entry';
+
+  // Check if student already exists in database (Case A & Case B)
+  const existingStudent = db.prepare('SELECT * FROM students WHERE usn = ? OR student_id = ?').get(cleanUsn, cleanUsn);
+
+  if (existingStudent) {
+    // Check if attendance already marked in this session
+    const existingAttendance = db.prepare('SELECT id FROM attendance WHERE session_id = ? AND student_id = ?').get(session_id, existingStudent.student_id);
+    if (existingAttendance) {
+      return res.status(409).json({
+        error: `Attendance already recorded for ${existingStudent.name} (${existingStudent.student_id}) in this session`,
+        student: existingStudent,
+        already_marked: true
+      });
+    }
+
+    // Determine category:
+    // Case A: Student is registered (is_registered = 1)
+    // Case B: Student exists but unregistered (is_registered = 0)
+    const isRegistered = existingStudent.is_registered === 1 || existingStudent.is_registered === null;
+    const tokenUsed = isRegistered ? 'MANUAL_ADMIN_OVERRIDE' : 'MANUAL_UNREGISTERED';
+
+    try {
+      db.prepare(`
+        INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
+        VALUES (?, ?, 1, ?, 1, ?, ?)
+      `).run(session_id, existingStudent.student_id, tokenUsed, customRemarks, adminName);
+
+      return res.status(200).json({
+        success: true,
+        category: isRegistered ? 'registered_existing' : 'unregistered_existing',
+        message: isRegistered
+          ? `Recorded attendance against existing registered record for ${existingStudent.name} (${existingStudent.student_id})`
+          : `Recorded attendance against existing walk-in record for ${existingStudent.name} (${existingStudent.student_id})`,
+        student: existingStudent
+      });
+    } catch (err) {
+      if (err.message && err.message.includes('UNIQUE constraint failed')) {
+        return res.status(409).json({ error: `Attendance already marked for ${existingStudent.name} in this session` });
+      }
+      return res.status(500).json({ error: 'Database error recording attendance' });
+    }
+  }
+
+  // Case C: Student does NOT exist in the database.
+  // Create unregistered student (is_registered = 0) and attendance atomically in a transaction.
+  const createUnregisteredTx = db.transaction(() => {
+    let baseId = computeStudentIDForWalkin(trimmedName, cleanMobile, cleanUsn);
+    let candidateId = baseId;
+    let counter = 1;
+    while (true) {
+      const exists = db.prepare('SELECT id FROM students WHERE student_id = ?').get(candidateId);
+      if (!exists) break;
+      candidateId = `${baseId}${counter++}`;
+    }
+    const finalStudentId = candidateId;
+
+    db.prepare(`
+      INSERT INTO students (name, usn, department, year, cycle, mobile, student_id, is_registered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(trimmedName, cleanUsn, finalDepartment, numYear, studentCycle, cleanMobile, finalStudentId);
+
+    db.prepare(`
+      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
+      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, ?, ?)
+    `).run(session_id, finalStudentId, customRemarks, adminName);
+
+    return {
+      student_id: finalStudentId,
+      name: trimmedName,
+      usn: cleanUsn,
+      department: finalDepartment,
+      year: numYear,
+      cycle: studentCycle,
+      mobile: cleanMobile,
+      is_registered: 0
+    };
+  });
+
+  try {
+    const newStudent = createUnregisteredTx();
+    return res.status(201).json({
+      success: true,
+      category: 'unregistered_new',
+      message: `Unregistered student ${trimmedName} (${newStudent.student_id}) added and attendance marked`,
+      student: newStudent
+    });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: 'Duplicate entry detected (USN or session attendance already exists)' });
+    }
+    console.error('[Manual Unregistered Error]', err);
+    return res.status(500).json({ error: 'Failed to record unregistered student attendance: ' + err.message });
   }
 });
 
@@ -439,7 +615,7 @@ router.put('/attendance/:attendanceId', (req, res) => {
 
 // 8. Student Roster Management (Search, Filter, List)
 router.get('/students', (req, res) => {
-  const { search, year, department } = req.query;
+  const { search, year, department, registration_status } = req.query;
 
   let query = 'SELECT * FROM students WHERE 1=1';
   const params = [];
@@ -450,7 +626,7 @@ router.get('/students', (req, res) => {
     params.push(term, term, term, term);
   }
 
-  if (year) {
+  if (year && year !== 'ALL') {
     query += ' AND year = ?';
     params.push(parseInt(year, 10));
   }
@@ -458,6 +634,12 @@ router.get('/students', (req, res) => {
   if (department && department !== 'ALL') {
     query += ' AND (department = ? OR department LIKE ?)';
     params.push(department, `%${department}%`);
+  }
+
+  if (registration_status === 'registered') {
+    query += ' AND (is_registered = 1 OR is_registered IS NULL)';
+  } else if (registration_status === 'unregistered') {
+    query += ' AND is_registered = 0';
   }
 
   query += ' ORDER BY id DESC';
@@ -469,7 +651,7 @@ router.get('/students', (req, res) => {
 // Edit a student roster entry
 router.put('/students/:studentId', (req, res) => {
   const currentStudentId = req.params.studentId.toUpperCase();
-  const { name, usn, department, year, cycle, mobile, new_student_id } = req.body;
+  const { name, usn, department, year, cycle, mobile, new_student_id, is_registered } = req.body;
 
   const existing = db.prepare('SELECT * FROM students WHERE student_id = ?').get(currentStudentId);
   if (!existing) {
@@ -483,11 +665,14 @@ router.put('/students/:studentId', (req, res) => {
   const finalCycle = cycle !== undefined ? cycle : existing.cycle;
   const finalMobile = mobile !== undefined && mobile !== null ? mobile.trim() : existing.mobile;
   const finalStudentId = new_student_id !== undefined && new_student_id !== null ? new_student_id.trim().toUpperCase() : existing.student_id;
+  const finalIsRegistered = is_registered !== undefined
+    ? ((is_registered === 1 || is_registered === true || is_registered === '1') ? 1 : 0)
+    : (existing.is_registered === undefined || existing.is_registered === null ? 1 : existing.is_registered);
 
   try {
     db.prepare(`
       UPDATE students 
-      SET name = ?, usn = ?, department = ?, year = ?, cycle = ?, mobile = ?, student_id = ?
+      SET name = ?, usn = ?, department = ?, year = ?, cycle = ?, mobile = ?, student_id = ?, is_registered = ?
       WHERE id = ?
     `).run(
       finalName,
@@ -497,6 +682,7 @@ router.put('/students/:studentId', (req, res) => {
       finalCycle,
       finalMobile,
       finalStudentId,
+      finalIsRegistered,
       existing.id
     );
 

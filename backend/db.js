@@ -26,9 +26,20 @@ function initDb() {
       cycle TEXT,
       mobile TEXT NOT NULL,
       student_id TEXT UNIQUE NOT NULL,
+      is_registered INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migrate students table if missing columns
+  try {
+    const studentCols = db.prepare(`PRAGMA table_info(students)`).all().map(c => c.name);
+    if (!studentCols.includes('is_registered')) {
+      db.exec(`ALTER TABLE students ADD COLUMN is_registered INTEGER DEFAULT 1`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration students]', migErr);
+  }
 
   // Sessions Table (supports 5 subjects / hours, 4-corner polygon geofence, PIN requirement toggle, and static QR mode)
   db.exec(`
@@ -214,10 +225,29 @@ function initDb() {
       lng REAL,
       geo_verified INTEGER DEFAULT 0,
       token_used TEXT,
+      is_manual INTEGER DEFAULT 0,
+      remarks TEXT,
+      marked_by TEXT DEFAULT 'admin',
       UNIQUE(session_id, student_id),
       FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
     );
   `);
+
+  // Migrate attendance table if missing columns
+  try {
+    const attCols = db.prepare(`PRAGMA table_info(attendance)`).all().map(c => c.name);
+    if (!attCols.includes('is_manual')) {
+      db.exec(`ALTER TABLE attendance ADD COLUMN is_manual INTEGER DEFAULT 0`);
+    }
+    if (!attCols.includes('remarks')) {
+      db.exec(`ALTER TABLE attendance ADD COLUMN remarks TEXT`);
+    }
+    if (!attCols.includes('marked_by')) {
+      db.exec(`ALTER TABLE attendance ADD COLUMN marked_by TEXT DEFAULT 'admin'`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration attendance]', migErr);
+  }
 
   // Performance Indexes for fast lookups with 1200+ participants
   db.exec(`
@@ -226,6 +256,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_tokens_token ON qr_tokens(token);
     CREATE INDEX IF NOT EXISTS idx_students_student_id ON students(student_id);
     CREATE INDEX IF NOT EXISTS idx_students_usn ON students(usn);
+    CREATE INDEX IF NOT EXISTS idx_students_is_registered ON students(is_registered);
   `);
 
   // Admins Table

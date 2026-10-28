@@ -76,12 +76,49 @@ router.post('/register', (req, res) => {
   }
 
   // Check if USN is already registered
-  const existingUSN = db.prepare('SELECT student_id, name FROM students WHERE usn = ?').get(usn.trim().toUpperCase());
+  const existingUSN = db.prepare('SELECT student_id, name, is_registered FROM students WHERE usn = ?').get(usn.trim().toUpperCase());
   if (existingUSN) {
-    return res.status(409).json({
-      error: `USN/Admission No. is already registered with Student ID: ${existingUSN.student_id}`,
-      student_id: existingUSN.student_id
-    });
+    if (existingUSN.is_registered === 1 || existingUSN.is_registered === null) {
+      return res.status(409).json({
+        error: `USN/Admission No. is already registered with Student ID: ${existingUSN.student_id}`,
+        student_id: existingUSN.student_id
+      });
+    }
+
+    // Student was previously added as unregistered walk-in (is_registered = 0).
+    // Complete their official registration and upgrade is_registered to 1.
+    try {
+      db.prepare(`
+        UPDATE students
+        SET name = ?, department = ?, year = ?, cycle = ?, mobile = ?, is_registered = 1
+        WHERE student_id = ?
+      `).run(
+        name.trim(),
+        finalDepartment,
+        numYear,
+        studentCycle,
+        cleanMobile,
+        existingUSN.student_id
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Student registration completed successfully',
+        student: {
+          student_id: existingUSN.student_id,
+          name: name.trim(),
+          usn: usn.trim().toUpperCase(),
+          department: finalDepartment,
+          year: numYear,
+          cycle: studentCycle,
+          mobile: cleanMobile,
+          is_registered: 1
+        }
+      });
+    } catch (updateErr) {
+      console.error('[Registration Upgrade Error]', updateErr);
+      return res.status(500).json({ error: 'Database error while completing student registration.' });
+    }
   }
 
   // Generate base Student ID
@@ -101,8 +138,8 @@ router.post('/register', (req, res) => {
 
   try {
     const insertStmt = db.prepare(`
-      INSERT INTO students (name, usn, department, year, cycle, mobile, student_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO students (name, usn, department, year, cycle, mobile, student_id, is_registered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     `);
 
     insertStmt.run(
