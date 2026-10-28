@@ -120,7 +120,7 @@ export default function AdminLogin() {
           </form>
 
           <div className="mt-6 text-center text-[11px] text-[#706860]">
-            Default credentials: <span className="font-mono text-[#a39b94]">admin / admin123</span>
+            Default credentials: <span className="font-mono text-[#a39b94]">Try your best</span>
           </div>
         </div>
       </div>
