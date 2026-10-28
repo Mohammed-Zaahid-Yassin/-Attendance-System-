@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Lock, User, ArrowRight } from 'lucide-react';
+import { MvjLogo, DeveloperCredit } from '../../components/Branding';
 
 export default function AdminLogin() {
   const [username, setUsername] = useState('admin');
@@ -38,10 +39,13 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080605] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#080605] flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 sm:p-10 shadow-2xl">
           <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <MvjLogo className="h-10" />
+            </div>
             <div className="inline-flex items-center gap-2 mb-3">
               <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#a39b94]">
                 MVJ College of Engineering
@@ -123,6 +127,11 @@ export default function AdminLogin() {
             Default credentials: <span className="font-mono text-[#a39b94]">Try your best</span>
           </div>
         </div>
+
+        {/* Sitewide Footer Credit */}
+        <footer className="mt-8 text-center flex justify-center">
+          <DeveloperCredit />
+        </footer>
       </div>
     </div>
   );

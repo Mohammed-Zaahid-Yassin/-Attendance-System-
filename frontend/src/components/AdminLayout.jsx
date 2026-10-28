@@ -12,6 +12,7 @@ import {
   QrCode,
   Sparkles
 } from 'lucide-react';
+import { MvjLogo, DeveloperCredit } from './Branding';
 
 export default function AdminLayout({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -34,7 +35,8 @@ export default function AdminLayout({ children }) {
     <div className="min-h-screen bg-[#080605] text-[#f5f0ea] flex flex-col md:flex-row">
       {/* Mobile Top Header */}
       <div className="flex md:hidden items-center justify-between border-b border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <MvjLogo className="h-7" />
           <span className="font-serif text-lg font-normal text-[#f5f0ea]">
             Spotlight <span className="italic text-amber-400">Admin</span>
           </span>
@@ -56,6 +58,9 @@ export default function AdminLayout({ children }) {
         <div>
           {/* Brand Logo */}
           <div className="hidden md:flex flex-col px-2 py-4 border-b border-[rgba(255,235,215,0.08)] mb-6">
+            <div className="mb-3">
+              <MvjLogo className="h-9" />
+            </div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
               MVJ College of Engineering
             </div>
@@ -113,12 +118,21 @@ export default function AdminLayout({ children }) {
             <LogOut className="h-4 w-4" />
             <span>Sign Out</span>
           </button>
+
+          {/* Sidebar Developer Attribution */}
+          <div className="pt-3 border-t border-[rgba(255,235,215,0.06)] flex justify-center">
+            <DeveloperCredit className="text-[11px]" />
+          </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-        {children}
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
+        <div>{children}</div>
+        <footer className="mt-8 pt-4 border-t border-[rgba(255,235,215,0.06)] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#706860]">
+          <span>MVJ College of Engineering • Departmental Lecture &amp; Event Attendance Portal</span>
+          <DeveloperCredit />
+        </footer>
       </main>
     </div>
   );

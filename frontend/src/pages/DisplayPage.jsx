@@ -2,15 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Users,
   Maximize2,
   Minimize2,
   Tv,
   RotateCcw
 } from 'lucide-react';
+import { MvjLogo, DeveloperCredit } from '../components/Branding';
 
 /**
- * SquareCountdownTimer — Thin square-perimeter countdown outline surrounding the QR code.
+ * SquareCountdownTimer — Prominent square-perimeter countdown outline surrounding the QR code.
  *
  * Implements authoritative server-timestamp progress calculation:
  * - t_i: token issuance time (issuedAt)
@@ -30,7 +30,7 @@ import {
  * - 25% remaining: High-Contrast Warning Red [239, 68, 68] (#ef4444)
  * - 0% remaining (expired): Deep Red [220, 38, 38] (#dc2626)
  */
-export function SquareCountdownTimer({ issuedAt, expiresAt, durationMs, serverTimeOffset = 0, size = 460, strokeWidth = 4, gap = 6, onExpire }) {
+export function SquareCountdownTimer({ issuedAt, expiresAt, durationMs, serverTimeOffset = 0, size = 460, strokeWidth = 10, gap = 8, onExpire }) {
   const rafRef = useRef(null);
   const expiredNotifiedRef = useRef(false);
 
@@ -184,7 +184,7 @@ export function SquareCountdownTimer({ issuedAt, expiresAt, durationMs, serverTi
           strokeDasharray={perimeter}
           strokeDashoffset={dashOffset}
           style={{
-            filter: `drop-shadow(0 0 3px rgba(${rColor}, ${gColor}, ${bColor}, 0.4))`
+            filter: `drop-shadow(0 0 6px rgba(${rColor}, ${gColor}, ${bColor}, 0.5))`
           }}
         />
       )}
@@ -201,7 +201,6 @@ export default function DisplayPage() {
     sessionFromUrl ? parseInt(sessionFromUrl, 10) : null
   );
   const [tokenData, setTokenData] = useState(null);
-  const [liveAttendanceCount, setLiveAttendanceCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [qrContainerSize, setQrContainerSize] = useState(320);
@@ -216,12 +215,11 @@ export default function DisplayPage() {
   }, [tokenData]);
 
   // ── Measure available space for QR — maximize QR size ────────────────
-  // The old formula wasted ~44% of available space on the circular ring.
-  // Now the square outline is only strokeWidth + gap outside the QR, so we
-  // can give nearly all available space directly to the QR image.
-  const OUTLINE_STROKE = 4;
-  const OUTLINE_GAP = 6;
-  const OUTLINE_OVERHEAD = 2 * (OUTLINE_GAP + OUTLINE_STROKE); // ~20px total
+  // The square countdown outline uses OUTLINE_STROKE=10 and OUTLINE_GAP=8.
+  // Overhead is kept minimal so almost all viewport is dedicated to the QR code.
+  const OUTLINE_STROKE = 10;
+  const OUTLINE_GAP = 8;
+  const OUTLINE_OVERHEAD = 2 * (OUTLINE_GAP * 2 + OUTLINE_STROKE); // 52px total
 
   const measure = useCallback(() => {
     const vw = window.innerWidth;
@@ -233,9 +231,9 @@ export default function DisplayPage() {
     if (isWidescreen) {
       // Side-by-side layout:
       // Side panel takes ~380px + gap (~32px) + outer padding (~32px) ≈ 444px
-      // Vertical space: header (~66px) + footer (~36px) + py margins (~24px) ≈ 126px
+      // Vertical space: header (~74px) + footer (~40px) + py margins (~24px) ≈ 138px
       const availableW = Math.max(260, vw - 444);
-      const availableH = Math.max(260, vh - 126);
+      const availableH = Math.max(260, vh - 138);
       // QR can be up to the smaller of available width/height, minus outline overhead
       maxQr = Math.min(availableW, availableH) - OUTLINE_OVERHEAD;
       // Cap at 900px — beyond this returns diminish at typical projector resolutions
@@ -249,7 +247,7 @@ export default function DisplayPage() {
     }
 
     setQrContainerSize(Math.floor(Math.max(200, maxQr)));
-  }, []);
+  }, [OUTLINE_OVERHEAD]);
 
   useEffect(() => {
     measure();
@@ -298,17 +296,11 @@ export default function DisplayPage() {
     fetchingRef.current = true;
     try {
       const originParam = encodeURIComponent(window.location.origin);
-      const [qrRes, liveRes] = await Promise.all([
-        axios.get(`/api/token/qr/${selectedSessionId}?origin=${originParam}`),
-        axios.get(`/api/attendance/live/${selectedSessionId}`)
-      ]);
-
-      const data = qrRes.data;
+      const res = await axios.get(`/api/token/qr/${selectedSessionId}?origin=${originParam}`);
+      const data = res.data;
       if (data && data.server_time) {
         serverTimeOffsetRef.current = data.server_time - Date.now();
       }
-
-      setLiveAttendanceCount(liveRes.data?.count || 0);
 
       // Guard: reject stale response older than currently displayed token (dynamic mode only)
       const current = activeTokenRef.current;
@@ -373,11 +365,9 @@ export default function DisplayPage() {
   if (!activeSessions.length || !currentSession) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#080605] p-6 text-center text-[#f5f0ea]">
-        <div className="max-w-md rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 shadow-2xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
-            <Tv className="h-7 w-7" />
-          </div>
-          <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+        <div className="max-w-md w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 shadow-2xl flex flex-col items-center">
+          <MvjLogo className="h-12 w-auto mb-4" />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
             MVJ College of Engineering
           </p>
           <h2 className="mt-1 font-serif text-2xl font-normal text-[#f5f0ea]">
@@ -386,8 +376,11 @@ export default function DisplayPage() {
           <p className="mt-3 text-xs leading-relaxed text-[#a39b94]">
             No lecture or event session is currently active.
           </p>
-          <div className="mt-6 rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-[11px] text-[#706860]">
+          <div className="mt-6 w-full rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-[11px] text-[#706860]">
             Display auto-refreshes every 5 seconds.
+          </div>
+          <div className="mt-6 pt-4 border-t border-[rgba(255,235,215,0.06)] w-full flex justify-center">
+            <DeveloperCredit />
           </div>
         </div>
       </div>
@@ -412,18 +405,21 @@ export default function DisplayPage() {
     <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-6 select-none">
       {/* Top Bar */}
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[rgba(255,235,215,0.08)] pb-4">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
-              MVJ College of Engineering
-            </span>
-            <span className="text-amber-500">•</span>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-400">Spotlight</span>
+        <div className="flex items-center gap-3.5">
+          <MvjLogo className="h-8 sm:h-9" />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
+                MVJ College of Engineering
+              </span>
+              <span className="text-amber-500">•</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-400">Spotlight</span>
+            </div>
+            <h1 className="font-serif text-xl sm:text-2xl font-normal text-[#f5f0ea]">
+              {currentSession.subject_name}{' '}
+              <span className="italic text-amber-400 font-normal">(Hour {currentSession.hour_number})</span>
+            </h1>
           </div>
-          <h1 className="font-serif text-xl sm:text-2xl font-normal text-[#f5f0ea]">
-            {currentSession.subject_name}{' '}
-            <span className="italic text-amber-400 font-normal">(Hour {currentSession.hour_number})</span>
-          </h1>
         </div>
 
         <div className="flex items-center gap-3">
@@ -444,13 +440,6 @@ export default function DisplayPage() {
               ))}
             </select>
           )}
-
-          {/* Live headcount */}
-          <div className="flex items-center gap-2 rounded-full border border-[rgba(240,150,80,0.25)] bg-[#18130e] px-4 py-2 text-xs">
-            <Users className="h-4 w-4 text-amber-400" />
-            <span className="font-mono text-sm font-bold text-[#f5f0ea]">{liveAttendanceCount}</span>
-            <span className="text-[#a39b94] text-[11px] uppercase tracking-wider">Recorded</span>
-          </div>
 
           {/* Fullscreen */}
           <button
@@ -491,10 +480,10 @@ export default function DisplayPage() {
             {/* Static QR mode: prominent green square status outline instead */}
             {isStaticQr && (
               <div
-                className="absolute border-2 border-emerald-500/40 animate-pulse pointer-events-none"
+                className="absolute border-[5px] border-emerald-500/50 animate-pulse pointer-events-none"
                 style={{
-                  width: qrContainerSize + 2 * OUTLINE_GAP,
-                  height: qrContainerSize + 2 * OUTLINE_GAP,
+                  width: qrContainerSize + 2 * (OUTLINE_GAP + OUTLINE_STROKE / 2),
+                  height: qrContainerSize + 2 * (OUTLINE_GAP + OUTLINE_STROKE / 2),
                   top: '50%',
                   left: '50%',
                   transform: 'translate(-50%, -50%)'
@@ -595,8 +584,9 @@ export default function DisplayPage() {
         </div>
       </main>
 
-      <footer className="border-t border-[rgba(255,235,215,0.06)] pt-3 text-center text-[11px] text-[#706860]">
-        MVJ College of Engineering • Departmental Lecture &amp; Event Attendance System
+      <footer className="border-t border-[rgba(255,235,215,0.06)] pt-3 pb-1 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#706860]">
+        <span>MVJ College of Engineering • Departmental Lecture &amp; Event Attendance System</span>
+        <DeveloperCredit className="text-[11px]" />
       </footer>
     </div>
   );

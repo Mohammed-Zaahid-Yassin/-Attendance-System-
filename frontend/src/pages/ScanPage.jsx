@@ -14,6 +14,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import QRScannerModal from '../components/QRScannerModal';
+import { MvjLogo, DeveloperCredit } from '../components/Branding';
 
 /* ─────────────────────────────────────────────────────────────
    Location error code → user-facing message + guidance map
@@ -279,7 +280,8 @@ export default function ScanPage() {
   if (status === 'success' && resultData) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
-        <div className="w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-8 sm:p-10 text-center shadow-2xl">
+        <div className="w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-8 sm:p-10 text-center shadow-2xl flex flex-col items-center">
+          <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
             <CheckCircle className="h-8 w-8" />
           </div>
@@ -291,7 +293,7 @@ export default function ScanPage() {
           </h1>
           <p className="mt-2 text-xs text-[#a39b94]">Your presence has been securely verified and recorded.</p>
 
-          <div className="mt-6 divide-y divide-[rgba(255,235,215,0.06)] rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4 text-xs text-left">
+          <div className="mt-6 w-full divide-y divide-[rgba(255,235,215,0.06)] rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-4 text-xs text-left">
             {[
               ['Student Name', resultData.student?.name],
               ['Student ID', resultData.student?.student_id, 'font-mono font-bold text-amber-400'],
@@ -306,11 +308,15 @@ export default function ScanPage() {
             ))}
           </div>
 
-          <div className="mt-6 rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-center text-xs text-[#706860]">
+          <div className="mt-6 w-full rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#181512] p-4 text-center text-xs text-[#706860]">
             <p className="font-medium text-[#a39b94]">Session Attendance Locked</p>
             <p className="mt-1 text-[11px] leading-relaxed">
               Each attendee must mark attendance exclusively on their own mobile device.
             </p>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[rgba(255,235,215,0.06)] w-full flex justify-center">
+            <DeveloperCredit />
           </div>
         </div>
       </div>
@@ -321,7 +327,8 @@ export default function ScanPage() {
   if (status === 'already_marked') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
-        <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-[#120f0d] p-8 text-center shadow-2xl">
+        <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-[#120f0d] p-8 text-center shadow-2xl flex flex-col items-center">
+          <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
             <AlertTriangle className="h-7 w-7" />
           </div>
@@ -329,7 +336,7 @@ export default function ScanPage() {
           <p className="mt-2 text-xs text-[#a39b94] leading-relaxed">
             {resultData?.error || 'Attendance for this Student ID has already been recorded for this session.'}
           </p>
-          <div className="mt-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] text-amber-200/90 leading-relaxed">
+          <div className="mt-6 w-full rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] text-amber-200/90 leading-relaxed">
             Duplicate entries are strictly prevented by the database.
           </div>
           <button
@@ -339,6 +346,9 @@ export default function ScanPage() {
           >
             Back to Submission
           </button>
+          <div className="mt-6 pt-4 border-t border-[rgba(255,235,215,0.06)] w-full flex justify-center">
+            <DeveloperCredit />
+          </div>
         </div>
       </div>
     );
@@ -350,6 +360,9 @@ export default function ScanPage() {
       <div className="mx-auto w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <MvjLogo className="h-10" />
+          </div>
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#a39b94]">
               MVJ College of Engineering
@@ -585,6 +598,11 @@ export default function ScanPage() {
             </button>
           </form>
         </div>
+
+        {/* Sitewide Footer Credit */}
+        <footer className="mt-8 text-center flex justify-center pb-4">
+          <DeveloperCredit />
+        </footer>
       </div>
 
       {/* QR Scanner Modal */}
