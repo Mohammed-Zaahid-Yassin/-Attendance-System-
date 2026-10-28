@@ -374,8 +374,15 @@ export default function AdminSettings() {
   const [passwordError, setPasswordError] = useState('');
   const [loadingPass, setLoadingPass] = useState(false);
 
-  const token = localStorage.getItem('admin_token');
-  const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
+  const getAuthHeaders = () => {
+    const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+    return currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
+  };
+  const axiosConfig = {
+    get headers() {
+      return getAuthHeaders();
+    }
+  };
 
   // ── Initial data load ──────────────────────────────────────────────────
   const loadVenueConfig = useCallback(() => {

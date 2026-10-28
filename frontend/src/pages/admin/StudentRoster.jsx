@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import AdminLayout from '../../components/AdminLayout';
-import { Users, Search, Trash2, Filter, Edit2, X, Save } from 'lucide-react';
+import { Users, Search, Trash2, Filter, Edit2, X, Save, UserCheck } from 'lucide-react';
 import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS } from '../../utils/departments';
 
 export default function StudentRoster() {
@@ -25,9 +26,9 @@ export default function StudentRoster() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
 
-  const token = localStorage.getItem('admin_token');
-  const axiosConfig = {
-    headers: { Authorization: `Bearer ${token}` }
+  const getAuthHeaders = () => {
+    const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+    return currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
   };
 
   const fetchStudents = async () => {
@@ -40,7 +41,7 @@ export default function StudentRoster() {
       if (statusFilter) params.registration_status = statusFilter;
 
       const res = await axios.get('/api/admin/students', {
-        ...axiosConfig,
+        headers: getAuthHeaders(),
         params
       });
       setStudents(res.data.students || []);
@@ -64,7 +65,7 @@ export default function StudentRoster() {
     if (!window.confirm(`Are you sure you want to delete student "${studentName}" (${studentId}) from the roster?`)) return;
 
     try {
-      await axios.delete(`/api/admin/students/${studentId}`, axiosConfig);
+      await axios.delete(`/api/admin/students/${studentId}`, { headers: getAuthHeaders() });
       setStudents((prev) => prev.filter((s) => s.student_id !== studentId));
     } catch (err) {
       alert('Failed to delete student: ' + (err.response?.data?.error || err.message));
@@ -116,7 +117,7 @@ export default function StudentRoster() {
           mobile: editMobile.trim(),
           is_registered: editIsRegistered
         },
-        axiosConfig
+        { headers: getAuthHeaders() }
       );
 
       const updated = res.data.student;
@@ -294,6 +295,14 @@ export default function StudentRoster() {
                       <td className="px-5 py-3.5 font-mono text-[#706860]">{s.mobile}</td>
                       <td className="px-5 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Link
+                            to={`/admin/attendance?lookup=${s.student_id}`}
+                            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg p-2 text-emerald-400 hover:bg-emerald-500/10 transition active:scale-95"
+                            title={`Mark live attendance for ${s.name} (${s.student_id})`}
+                            aria-label={`Mark live attendance for ${s.name}`}
+                          >
+                            <UserCheck className="h-4 w-4" />
+                          </Link>
                           <button
                             type="button"
                             onClick={() => openEditModal(s)}

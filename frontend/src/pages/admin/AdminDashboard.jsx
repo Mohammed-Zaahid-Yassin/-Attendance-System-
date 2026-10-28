@@ -68,9 +68,14 @@ export default function AdminDashboard() {
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState('');
 
-  const token = localStorage.getItem('admin_token');
+  const getAuthHeaders = () => {
+    const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+    return currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
+  };
   const axiosConfig = {
-    headers: { Authorization: `Bearer ${token}` }
+    get headers() {
+      return getAuthHeaders();
+    }
   };
 
   const fetchStatsAndSessions = async () => {

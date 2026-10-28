@@ -311,6 +311,43 @@ router.get('/attendance/live/:sessionId', (req, res) => {
   });
 });
 
+// Helpers for attendance export filename generation
+function getShortDept(dept) {
+  if (!dept || dept === 'ALL') return '';
+  const match = dept.match(/\(([^)]+)\)/);
+  if (match && match[1]) {
+    return match[1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+  }
+  return dept.replace(/[^a-zA-Z0-9]/g, '').trim();
+}
+
+function getYearSuffix(yr) {
+  if (!yr || yr === 'ALL') return '';
+  const y = String(yr).trim();
+  if (y === '1') return '1stYear';
+  if (y === '2') return '2ndYear';
+  if (y === '3') return '3rdYear';
+  if (y === '4') return '4thYear';
+  if (/^\d+$/.test(y)) return `${y}Year`;
+  return y.replace(/[^a-zA-Z0-9]/g, '');
+}
+
+function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
+  let cleanEvent = (subjectName || '').replace(/[/\\?%*:|"<>]/g, '').trim();
+  if (!cleanEvent) {
+    cleanEvent = hourNumber ? `Attendance-Hour${hourNumber}` : 'Attendance';
+  }
+
+  const deptStr = getShortDept(department);
+  const yearStr = getYearSuffix(year);
+
+  const parts = [cleanEvent];
+  if (deptStr) parts.push(deptStr);
+  if (yearStr) parts.push(yearStr);
+
+  return `${parts.join('-')}.${ext}`;
+}
+
 // 5. Export Attendance as CSV
 router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
@@ -374,42 +411,6 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
     `"${r.marked_at}"`,
     r.geo_verified ? 'Yes' : 'No'
   ]);
-
-function getShortDept(dept) {
-  if (!dept || dept === 'ALL') return '';
-  const match = dept.match(/\(([^)]+)\)/);
-  if (match && match[1]) {
-    return match[1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
-  }
-  return dept.replace(/[^a-zA-Z0-9]/g, '').trim();
-}
-
-function getYearSuffix(yr) {
-  if (!yr || yr === 'ALL') return '';
-  const y = String(yr).trim();
-  if (y === '1') return '1stYear';
-  if (y === '2') return '2ndYear';
-  if (y === '3') return '3rdYear';
-  if (y === '4') return '4thYear';
-  if (/^\d+$/.test(y)) return `${y}Year`;
-  return y.replace(/[^a-zA-Z0-9]/g, '');
-}
-
-function computeExportFilename({ department, year, subjectName, hourNumber, ext }) {
-  let cleanEvent = (subjectName || '').replace(/[/\\?%*:|"<>]/g, '').trim();
-  if (!cleanEvent) {
-    cleanEvent = hourNumber ? `Attendance-Hour${hourNumber}` : 'Attendance';
-  }
-
-  const deptStr = getShortDept(department);
-  const yearStr = getYearSuffix(year);
-
-  const parts = [cleanEvent];
-  if (deptStr) parts.push(deptStr);
-  if (yearStr) parts.push(yearStr);
-
-  return `${parts.join('-')}.${ext}`;
-}
 
   const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
   const filename = computeExportFilename({

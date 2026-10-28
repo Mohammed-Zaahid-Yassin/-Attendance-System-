@@ -95,22 +95,38 @@ export default function LiveAttendance() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
 
-  const token = localStorage.getItem('admin_token');
-  const axiosConfig = {
-    headers: { Authorization: `Bearer ${token}` }
+  const getAuthHeaders = () => {
+    const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+    return currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
   };
+  const axiosConfig = {
+    get headers() {
+      return getAuthHeaders();
+    }
+  };
+
+  // Pre-fill student lookup if passed via URL (?lookup=ID or ?student=ID)
+  useEffect(() => {
+    const lookupParam = searchParams.get('lookup') || searchParams.get('student');
+    if (lookupParam) {
+      setManualStudentId(lookupParam.trim().toUpperCase());
+    }
+  }, [searchParams]);
 
   // 1. Fetch all sessions for dropdown selector
   useEffect(() => {
     const fetchSessions = async () => {
       try {
-        const res = await axios.get('/api/admin/sessions', axiosConfig);
+        const res = await axios.get('/api/admin/sessions', { headers: getAuthHeaders() });
         const list = res.data.sessions || [];
         setSessions(list);
 
-        if (!selectedSessionId && list.length > 0) {
-          const active = list.find((s) => s.is_active === 1) || list[0];
-          setSelectedSessionId(String(active.id));
+        if (list.length > 0) {
+          const matching = list.find((s) => String(s.id) === String(selectedSessionId));
+          if (!matching) {
+            const active = list.find((s) => s.is_active === 1) || list[0];
+            setSelectedSessionId(String(active.id));
+          }
         }
       } catch (err) {
         console.error('Failed to load sessions', err);
@@ -215,6 +231,49 @@ export default function LiveAttendance() {
     }
   };
 
+  // Force update existing attendance record when conflict occurs
+  const handleForceUpdateAttendance = async () => {
+    if (!selectedSessionId) return;
+    setManualLoading(true);
+    try {
+      if (manualMode === 'registered') {
+        const res = await axios.post(
+          '/api/admin/attendance/manual-mark',
+          {
+            session_id: parseInt(selectedSessionId, 10),
+            student_id: manualStudentId.trim().toUpperCase(),
+            remarks: manualRemarks.trim() || 'Manual override updated by administrator',
+            force: true
+          },
+          { headers: getAuthHeaders() }
+        );
+        setManualMsg(res.data.message || 'Attendance record updated!');
+        setManualMsgType('success');
+      } else {
+        const res = await axios.post(
+          '/api/admin/attendance/manual-unregistered',
+          {
+            session_id: parseInt(selectedSessionId, 10),
+            name: unregName.trim(),
+            usn: unregUsn.trim().toUpperCase(),
+            remarks: unregRemarks.trim() || 'Walk-in record updated by administrator',
+            force: true
+          },
+          { headers: getAuthHeaders() }
+        );
+        setManualMsg(res.data.message || 'Attendance record updated!');
+        setManualMsgType('success');
+      }
+      const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
+      setRecords(freshRes.data.records || []);
+    } catch (err) {
+      setManualMsg(err.response?.data?.error || 'Failed to update attendance record');
+      setManualMsgType('error');
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
   // Manual Override: Mark registered student attendance manually
   const handleManualMark = async (e) => {
     e.preventDefault();
@@ -232,7 +291,7 @@ export default function LiveAttendance() {
           student_id: manualStudentId.trim().toUpperCase(),
           remarks: manualRemarks.trim() || 'Manual entry by administrator'
         },
-        axiosConfig
+        { headers: getAuthHeaders() }
       );
 
       setManualMsg(res.data.message || 'Attendance manually marked!');
@@ -244,8 +303,9 @@ export default function LiveAttendance() {
       const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
       setRecords(freshRes.data.records || []);
     } catch (err) {
-      setManualMsg(err.response?.data?.error || 'Failed to mark student manually');
-      setManualMsgType('error');
+      const errMsg = err.response?.data?.error || 'Failed to mark student manually';
+      setManualMsg(errMsg);
+      setManualMsgType(err.response?.status === 409 ? 'warning' : 'error');
     } finally {
       setManualLoading(false);
     }
@@ -301,7 +361,7 @@ export default function LiveAttendance() {
           mobile: unregMobile.trim(),
           remarks: unregRemarks.trim() || 'Unregistered walk-in attendee'
         },
-        axiosConfig
+        { headers: getAuthHeaders() }
       );
 
       setManualMsg(res.data.message || 'Unregistered student attendance recorded successfully!');
@@ -317,8 +377,9 @@ export default function LiveAttendance() {
       const freshRes = await axios.get(`/api/attendance/live/${selectedSessionId}`);
       setRecords(freshRes.data.records || []);
     } catch (err) {
-      setManualMsg(err.response?.data?.error || 'Failed to record unregistered student attendance');
-      setManualMsgType('error');
+      const errMsg = err.response?.data?.error || 'Failed to record unregistered student attendance';
+      setManualMsg(errMsg);
+      setManualMsgType(err.response?.status === 409 ? 'warning' : 'error');
     } finally {
       setManualLoading(false);
     }
@@ -328,7 +389,7 @@ export default function LiveAttendance() {
   const handleDeleteRecord = async (attendanceId) => {
     if (!window.confirm('Are you sure you want to remove this attendance record?')) return;
     try {
-      await axios.delete(`/api/admin/attendance/${attendanceId}`, axiosConfig);
+      await axios.delete(`/api/admin/attendance/${attendanceId}`, { headers: getAuthHeaders() });
       setRecords((prev) => prev.filter((r) => r.id !== attendanceId));
     } catch (err) {
       alert('Failed to delete attendance record: ' + (err.response?.data?.error || err.message));
@@ -357,7 +418,7 @@ export default function LiveAttendance() {
           student_id: editStudentId.trim().toUpperCase(),
           geo_verified: editGeoVerified ? 1 : 0
         },
-        axiosConfig
+        { headers: getAuthHeaders() }
       );
 
       const updated = res.data.record;
@@ -565,17 +626,25 @@ export default function LiveAttendance() {
               </button>
             </div>
 
+            {/* Warning if no session is selected */}
+            {!selectedSessionId && (
+              <div className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+                <span>Please select a classroom or event session in the selector above to record attendance.</span>
+              </div>
+            )}
+
             {/* Registered Student Form */}
             {manualMode === 'registered' ? (
               <form onSubmit={handleManualMark} className="space-y-2.5">
                 <div>
                   <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
-                    Student ID or USN *
+                    Student ID, USN, or Name *
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. ARJU3210 or 1MJ23CS045"
+                    placeholder="e.g. ARJU9870, 1MJ24EC094, or Arjun"
                     value={manualStudentId}
                     onChange={(e) => setManualStudentId(e.target.value.toUpperCase())}
                     className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
@@ -598,7 +667,7 @@ export default function LiveAttendance() {
                   disabled={manualLoading || !manualStudentId.trim() || !selectedSessionId}
                   className="w-full rounded-full border border-[rgba(240,150,80,0.3)] bg-amber-500/10 py-2 text-xs font-semibold uppercase tracking-wider text-amber-400 hover:bg-amber-500/20 transition disabled:opacity-40"
                 >
-                  {manualLoading ? 'Marking...' : 'Mark Registered Attendance'}
+                  {manualLoading ? 'Marking...' : !selectedSessionId ? 'Select Session First' : 'Mark Registered Attendance'}
                 </button>
               </form>
             ) : (
@@ -720,7 +789,7 @@ export default function LiveAttendance() {
                   disabled={manualLoading || !unregName.trim() || !unregUsn.trim() || !selectedSessionId}
                   className="w-full rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-amber-600/20 py-2 text-xs font-semibold uppercase tracking-wider text-amber-300 hover:from-amber-500/30 hover:to-amber-600/30 transition disabled:opacity-40"
                 >
-                  {manualLoading ? 'Saving & Marking...' : 'Mark Unregistered Attendance'}
+                  {manualLoading ? 'Saving & Marking...' : !selectedSessionId ? 'Select Session First' : 'Mark Unregistered Attendance'}
                 </button>
               </form>
             )}
@@ -728,7 +797,7 @@ export default function LiveAttendance() {
             {/* Status / Feedback alert */}
             {manualMsg && (
               <div
-                className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                className={`p-3 rounded-xl border text-xs flex flex-col gap-2 ${
                   manualMsgType === 'success'
                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                     : manualMsgType === 'error'
@@ -736,12 +805,41 @@ export default function LiveAttendance() {
                     : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                 }`}
               >
-                {manualMsgType === 'success' ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                <div className="flex items-start gap-2">
+                  {manualMsgType === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                  )}
+                  <span className="flex-1 text-[11px] leading-tight">{manualMsg}</span>
+                </div>
+
+                {/* If student wasn't found in registered roster, offer 1-click switch to + Add Unregistered */}
+                {manualMode === 'registered' && (manualMsg.includes('not found') || manualMsg.includes('Unregistered') || manualMsg.includes('+ Add Unregistered')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualMode('unregistered');
+                      setUnregUsn(manualStudentId.trim().toUpperCase());
+                      setManualMsg('');
+                    }}
+                    className="self-start inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition"
+                  >
+                    <span>+ Add as Unregistered / Walk-in ({manualStudentId.trim().toUpperCase()})</span>
+                  </button>
                 )}
-                <span className="flex-1 text-[11px] leading-tight">{manualMsg}</span>
+
+                {/* If attendance was already marked in this session, allow force update of remarks/status */}
+                {manualMsg.includes('already marked') && (
+                  <button
+                    type="button"
+                    onClick={handleForceUpdateAttendance}
+                    disabled={manualLoading}
+                    className="self-start inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition disabled:opacity-50"
+                  >
+                    <span>Force Update Record & Remarks</span>
+                  </button>
+                )}
               </div>
             )}
           </div>

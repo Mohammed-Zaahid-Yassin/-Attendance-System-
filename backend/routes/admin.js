@@ -349,22 +349,34 @@ function computeStudentIDForWalkin(name, mobile, usn) {
   return `${namePart}${suffix}`;
 }
 
-// 7. Manual Attendance Override / Error Correction (Registered students or by Student ID / USN)
+// 7. Manual Attendance Override / Error Correction (Registered students or by Student ID / USN / Name)
 // Add attendance manually for a student who had a device/scan issue
 router.post('/attendance/manual-mark', (req, res) => {
-  const { session_id, student_id, usn, remarks } = req.body;
+  const { session_id, student_id, usn, remarks, force, update_existing } = req.body;
 
-  const lookupKey = (student_id || usn || '').trim().toUpperCase();
-  if (!session_id || !lookupKey) {
-    return res.status(400).json({ error: 'Session ID and Student ID or USN are required' });
+  const numSessionId = parseInt(session_id, 10);
+  const lookupKey = (student_id || usn || '').trim();
+  if (!numSessionId || isNaN(numSessionId) || !lookupKey) {
+    return res.status(400).json({ error: 'Session ID and Student ID, USN, or Name are required' });
   }
 
-  const student = db.prepare('SELECT * FROM students WHERE student_id = ? OR usn = ?').get(lookupKey, lookupKey);
+  const lookupUpper = lookupKey.toUpperCase();
+  const student = db.prepare(`
+    SELECT * FROM students 
+    WHERE UPPER(TRIM(student_id)) = ? 
+       OR UPPER(TRIM(usn)) = ? 
+       OR UPPER(TRIM(name)) = ?
+  `).get(lookupUpper, lookupUpper, lookupUpper);
+
   if (!student) {
-    return res.status(404).json({ error: 'Student not found in roster with ID or USN: ' + lookupKey });
+    return res.status(404).json({ 
+      error: `Student not found in roster with ID, USN, or Name: "${lookupKey}". Switch to "+ Add Unregistered" to mark attendance for a walk-in student.`,
+      not_found: true,
+      lookupKey
+    });
   }
 
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(numSessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -373,12 +385,41 @@ router.post('/attendance/manual-mark', (req, res) => {
   const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual entry by administrator';
   const tokenUsed = student.is_registered === 0 ? 'MANUAL_UNREGISTERED' : 'MANUAL_ADMIN_OVERRIDE';
 
+  // Check if attendance is already recorded for this student in this session
+  const existingAttendance = db.prepare('SELECT id, marked_at FROM attendance WHERE session_id = ? AND student_id = ?').get(numSessionId, student.student_id);
+
+  if (existingAttendance) {
+    if (force === true || update_existing === true) {
+      db.prepare(`
+        UPDATE attendance 
+        SET geo_verified = 1, is_manual = 1, remarks = ?, marked_by = ?
+        WHERE id = ?
+      `).run(customRemarks, adminName, existingAttendance.id);
+
+      return res.json({
+        success: true,
+        updated: true,
+        message: `Updated attendance record for ${student.name} (${student.student_id})`,
+        student,
+        is_registered: student.is_registered !== 0
+      });
+    }
+
+    return res.status(409).json({ 
+      error: `Attendance already marked for ${student.name} (${student.student_id}) in this session`,
+      already_marked: true,
+      student,
+      attendance_id: existingAttendance.id,
+      marked_at: existingAttendance.marked_at
+    });
+  }
+
   try {
     const insertStmt = db.prepare(`
       INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
       VALUES (?, ?, 1, ?, 1, ?, ?)
     `);
-    insertStmt.run(session_id, student.student_id, tokenUsed, customRemarks, adminName);
+    insertStmt.run(numSessionId, student.student_id, tokenUsed, customRemarks, adminName);
 
     return res.json({
       success: true,
@@ -388,7 +429,11 @@ router.post('/attendance/manual-mark', (req, res) => {
     });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
-      return res.status(409).json({ error: `Attendance already marked for ${student.name} (${student.student_id}) in this session` });
+      return res.status(409).json({ 
+        error: `Attendance already marked for ${student.name} (${student.student_id}) in this session`,
+        already_marked: true,
+        student
+      });
     }
     return res.status(500).json({ error: 'Database error' });
   }
@@ -396,13 +441,14 @@ router.post('/attendance/manual-mark', (req, res) => {
 
 // 7b. Manual Attendance for Unregistered / Walk-in Students
 router.post('/attendance/manual-unregistered', (req, res) => {
-  const { session_id, name, usn, department, year, cycle, mobile, remarks } = req.body;
+  const { session_id, name, usn, department, year, cycle, mobile, remarks, force, update_existing } = req.body;
 
-  if (!session_id) {
-    return res.status(400).json({ error: 'Session ID is required' });
+  const numSessionId = parseInt(session_id, 10);
+  if (!numSessionId || isNaN(numSessionId)) {
+    return res.status(400).json({ error: 'Valid Session ID is required' });
   }
 
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(numSessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -451,16 +497,36 @@ router.post('/attendance/manual-unregistered', (req, res) => {
   const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual unregistered walk-in entry';
 
   // Check if student already exists in database (Case A & Case B)
-  const existingStudent = db.prepare('SELECT * FROM students WHERE usn = ? OR student_id = ?').get(cleanUsn, cleanUsn);
+  const existingStudent = db.prepare(`
+    SELECT * FROM students 
+    WHERE UPPER(TRIM(usn)) = ? 
+       OR UPPER(TRIM(student_id)) = ?
+  `).get(cleanUsn, cleanUsn);
 
   if (existingStudent) {
     // Check if attendance already marked in this session
-    const existingAttendance = db.prepare('SELECT id FROM attendance WHERE session_id = ? AND student_id = ?').get(session_id, existingStudent.student_id);
+    const existingAttendance = db.prepare('SELECT id, marked_at FROM attendance WHERE session_id = ? AND student_id = ?').get(numSessionId, existingStudent.student_id);
     if (existingAttendance) {
+      if (force === true || update_existing === true) {
+        db.prepare(`
+          UPDATE attendance 
+          SET geo_verified = 1, is_manual = 1, remarks = ?, marked_by = ?
+          WHERE id = ?
+        `).run(customRemarks, adminName, existingAttendance.id);
+
+        return res.json({
+          success: true,
+          updated: true,
+          message: `Updated attendance record for ${existingStudent.name} (${existingStudent.student_id})`,
+          student: existingStudent
+        });
+      }
+
       return res.status(409).json({
         error: `Attendance already recorded for ${existingStudent.name} (${existingStudent.student_id}) in this session`,
         student: existingStudent,
-        already_marked: true
+        already_marked: true,
+        attendance_id: existingAttendance.id
       });
     }
 
@@ -474,7 +540,7 @@ router.post('/attendance/manual-unregistered', (req, res) => {
       db.prepare(`
         INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
         VALUES (?, ?, 1, ?, 1, ?, ?)
-      `).run(session_id, existingStudent.student_id, tokenUsed, customRemarks, adminName);
+      `).run(numSessionId, existingStudent.student_id, tokenUsed, customRemarks, adminName);
 
       return res.status(200).json({
         success: true,
@@ -486,7 +552,11 @@ router.post('/attendance/manual-unregistered', (req, res) => {
       });
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE constraint failed')) {
-        return res.status(409).json({ error: `Attendance already marked for ${existingStudent.name} in this session` });
+        return res.status(409).json({ 
+          error: `Attendance already marked for ${existingStudent.name} in this session`,
+          already_marked: true,
+          student: existingStudent
+        });
       }
       return res.status(500).json({ error: 'Database error recording attendance' });
     }
@@ -513,7 +583,7 @@ router.post('/attendance/manual-unregistered', (req, res) => {
     db.prepare(`
       INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
       VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, ?, ?)
-    `).run(session_id, finalStudentId, customRemarks, adminName);
+    `).run(numSessionId, finalStudentId, customRemarks, adminName);
 
     return {
       student_id: finalStudentId,
