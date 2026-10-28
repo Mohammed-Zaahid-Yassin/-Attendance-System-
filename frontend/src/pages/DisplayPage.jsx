@@ -205,6 +205,8 @@ export default function DisplayPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [qrContainerSize, setQrContainerSize] = useState(320);
 
+  const headerRef = useRef(null);
+  const footerRef = useRef(null);
   const qrWrapRef = useRef(null);
   const serverTimeOffsetRef = useRef(0);
   const fetchingRef = useRef(false);
@@ -214,7 +216,7 @@ export default function DisplayPage() {
     activeTokenRef.current = tokenData;
   }, [tokenData]);
 
-  // ── Measure available space for QR — maximize QR size ────────────────
+  // ── Measure available space for QR — maximize QR size without scrolling ────────────────
   // The square countdown outline uses OUTLINE_STROKE=10 and OUTLINE_GAP=8.
   // Overhead is kept minimal so almost all viewport is dedicated to the QR code.
   const OUTLINE_STROKE = 10;
@@ -226,27 +228,33 @@ export default function DisplayPage() {
     const vh = window.innerHeight;
     const isWidescreen = vw >= 1024;
 
+    const headerH = headerRef.current ? headerRef.current.offsetHeight : 62;
+    const footerH = footerRef.current ? footerRef.current.offsetHeight : 32;
+
     let maxQr;
 
     if (isWidescreen) {
       // Side-by-side layout:
-      // Side panel takes ~380px + gap (~32px) + outer padding (~32px) ≈ 444px
-      // Vertical space: header (~74px) + footer (~40px) + py margins (~24px) ≈ 138px
-      const availableW = Math.max(260, vw - 444);
-      const availableH = Math.max(260, vh - 138);
+      // Side panel takes ~350px + gap (~36px) + outer padding (~48px) + buffer (16px) ≈ 450px
+      // Vertical space: header + footer + container py (24px) + main py (8px) + safety buffer (16px) ≈ 48px + header + footer
+      const availableW = Math.max(240, vw - 450);
+      const verticalOverhead = headerH + footerH + 48;
+      const availableH = Math.max(240, vh - verticalOverhead);
+
       // QR can be up to the smaller of available width/height, minus outline overhead
       maxQr = Math.min(availableW, availableH) - OUTLINE_OVERHEAD;
-      // Cap at 900px — beyond this returns diminish at typical projector resolutions
-      maxQr = Math.min(maxQr, 900);
+      // Cap at 850px to ensure comfortable clearance on 1080p auditorium screens
+      maxQr = Math.min(maxQr, 850);
     } else {
       // Stacked layout for mobile / tablet portrait
-      const availableW = vw * 0.92;
-      const availableH = vh * 0.50;
+      const availableW = vw * 0.90;
+      const verticalOverhead = headerH + footerH + 340; // account for side panel below QR
+      const availableH = Math.max(180, vh - verticalOverhead);
       maxQr = Math.min(availableW, availableH) - OUTLINE_OVERHEAD;
-      maxQr = Math.min(maxQr, 500);
+      maxQr = Math.min(maxQr, 420);
     }
 
-    setQrContainerSize(Math.floor(Math.max(200, maxQr)));
+    setQrContainerSize(Math.floor(Math.max(180, maxQr)));
   }, [OUTLINE_OVERHEAD]);
 
   useEffect(() => {
@@ -259,7 +267,8 @@ export default function DisplayPage() {
   useEffect(() => {
     const onFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
-      setTimeout(measure, 100);
+      setTimeout(measure, 50);
+      setTimeout(measure, 150);
     };
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
@@ -364,7 +373,7 @@ export default function DisplayPage() {
   // ── No active session ─────────────────────────────────────────────────
   if (!activeSessions.length || !currentSession) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#080605] p-6 text-center text-[#f5f0ea]">
+      <div className="flex h-screen h-[100dvh] max-h-screen overflow-hidden flex-col items-center justify-center bg-[#080605] p-6 text-center text-[#f5f0ea]">
         <div className="max-w-md w-full rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 shadow-2xl flex flex-col items-center">
           <MvjLogo className="h-12 w-auto mb-4" />
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-500">
@@ -402,9 +411,12 @@ export default function DisplayPage() {
   const outlineSvgSize = qrContainerSize + OUTLINE_OVERHEAD;
 
   return (
-    <div className="flex min-h-screen flex-col justify-between bg-[#080605] text-[#f5f0ea] p-4 sm:p-6 select-none">
+    <div className="flex h-screen h-[100dvh] max-h-screen overflow-hidden flex-col justify-between bg-[#080605] text-[#f5f0ea] p-3 sm:px-6 sm:py-3.5 select-none box-border">
       {/* Top Bar */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[rgba(255,235,215,0.08)] pb-4">
+      <header
+        ref={headerRef}
+        className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(255,235,215,0.08)] pb-2.5 sm:pb-3 shrink-0"
+      >
         <div className="flex items-center gap-3.5">
           <MvjLogo className="h-8 sm:h-9" />
           <div className="flex flex-col">
@@ -454,7 +466,7 @@ export default function DisplayPage() {
       </header>
 
       {/* Main Display: Responsive side-by-side on projector/widescreen, stacked on mobile */}
-      <main className="flex flex-1 flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 py-2 sm:py-3 px-2 sm:px-4 w-full max-w-[1600px] mx-auto">
+      <main className="flex flex-1 min-h-0 flex-col lg:flex-row items-center justify-center gap-6 lg:gap-10 py-1 px-2 w-full max-w-[1600px] mx-auto overflow-hidden">
         {/* QR Code + Square Countdown Outline */}
         <div className="flex flex-col items-center justify-center shrink-0">
           <div
@@ -518,14 +530,14 @@ export default function DisplayPage() {
         </div>
 
         {/* Side Panel: Screen PIN, Student ID Reminder & Instructions (always visible in fullscreen) */}
-        <div className="flex flex-col w-full max-w-sm sm:max-w-md lg:w-[350px] space-y-3.5 shrink-0 justify-center">
+        <div className="flex flex-col w-full max-w-sm sm:max-w-md lg:w-[340px] space-y-2.5 sm:space-y-3 shrink-0 justify-center">
           {/* Screen PIN (if required) */}
           {isPinRequired && (
-            <div className="rounded-2xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-6 py-4 text-center shadow-xl">
+            <div className="rounded-2xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-5 py-3 text-center shadow-xl">
               <span className="block text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a39b94]">
                 Screen PIN
               </span>
-              <div className="mt-1 font-mono text-5xl sm:text-6xl font-black tracking-[0.18em] text-amber-400">
+              <div className="mt-0.5 font-mono text-4xl sm:text-5xl lg:text-6xl font-black tracking-[0.16em] text-amber-400">
                 {tokenData?.unique_pin || '••••••'}
               </div>
             </div>
@@ -533,7 +545,7 @@ export default function DisplayPage() {
 
           {/* Static QR mode badge */}
           {isStaticQr && (
-            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-center text-xs text-emerald-400 font-medium">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2 text-center text-xs text-emerald-400 font-medium">
               <span className="relative flex items-center justify-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 Static QR Mode — Active
@@ -542,9 +554,9 @@ export default function DisplayPage() {
           )}
 
           {/* Prominent Student ID reminder */}
-          <div className="rounded-2xl border border-[rgba(240,150,80,0.35)] bg-gradient-to-br from-[#1a140f] via-[#14100c] to-[#18130e] p-4 sm:p-5 shadow-2xl text-left">
-            <div className="flex items-center gap-2.5 pb-2.5 border-b border-[rgba(255,235,215,0.08)]">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 text-xs font-bold ring-1 ring-amber-500/30">
+          <div className="rounded-2xl border border-[rgba(240,150,80,0.35)] bg-gradient-to-br from-[#1a140f] via-[#14100c] to-[#18130e] p-3.5 sm:p-4 shadow-2xl text-left">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-[rgba(255,235,215,0.08)]">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 text-xs font-bold ring-1 ring-amber-500/30">
                 ID
               </div>
               <div>
@@ -555,19 +567,19 @@ export default function DisplayPage() {
               </div>
             </div>
 
-            <div className="mt-3 space-y-1.5">
-              <div className="flex items-center justify-between rounded-xl bg-[#0e0c0a] border border-[rgba(255,235,215,0.06)] px-3 py-1.5">
+            <div className="mt-2.5 space-y-1.5">
+              <div className="flex items-center justify-between rounded-xl bg-[#0e0c0a] border border-[rgba(255,235,215,0.06)] px-3 py-1">
                 <span className="text-xs text-[#a39b94]">Name Prefix</span>
                 <span className="text-xs font-bold text-amber-400 font-mono tracking-wide">First 4 Letters</span>
               </div>
-              <div className="flex items-center justify-between rounded-xl bg-[#0e0c0a] border border-[rgba(255,235,215,0.06)] px-3 py-1.5">
+              <div className="flex items-center justify-between rounded-xl bg-[#0e0c0a] border border-[rgba(255,235,215,0.06)] px-3 py-1">
                 <span className="text-xs text-[#a39b94]">Mobile Suffix</span>
                 <span className="text-xs font-bold text-amber-400 font-mono tracking-wide">Last 4 Digits</span>
               </div>
             </div>
 
             {/* Concrete Example */}
-            <div className="mt-3 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+            <div className="mt-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-1.5">
               <div className="text-[10px] uppercase tracking-wider text-[#a39b94] font-medium">Example</div>
               <div className="mt-0.5 flex items-center justify-between text-xs">
                 <span className="text-[#c8c0b8] font-mono"><strong className="text-white">ARJU</strong>N + 98765<strong className="text-white">3210</strong></span>
@@ -577,14 +589,17 @@ export default function DisplayPage() {
           </div>
 
           {/* Quick scan instruction */}
-          <div className="rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#120f0d]/60 px-4 py-2 text-center text-xs text-[#8e857d]">
+          <div className="rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#120f0d]/60 px-4 py-1.5 text-center text-xs text-[#8e857d]">
             Scan with your mobile camera
             {isPinRequired ? ' & enter the screen PIN' : ''} to mark attendance.
           </div>
         </div>
       </main>
 
-      <footer className="border-t border-[rgba(255,235,215,0.06)] pt-3 pb-1 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#706860]">
+      <footer
+        ref={footerRef}
+        className="border-t border-[rgba(255,235,215,0.06)] pt-2 pb-0.5 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#706860]"
+      >
         <span>MVJ College of Engineering • Departmental Lecture &amp; Event Attendance System</span>
         <DeveloperCredit className="text-[11px]" />
       </footer>

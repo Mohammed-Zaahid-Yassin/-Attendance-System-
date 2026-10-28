@@ -7,13 +7,11 @@ import React from 'react';
  */
 export function MvjLogo({ className = 'h-9 sm:h-10', alt = 'MVJ College of Engineering' }) {
   return (
-    <div className="inline-flex items-center justify-center bg-white/95 rounded-lg px-2.5 py-1 shadow-sm shrink-0 border border-white/20">
-      <img
-        src="/mvj-logo.png"
-        alt={alt}
-        className={`${className} w-auto object-contain block`}
-      />
-    </div>
+    <img
+      src="/mvj-logo.png"
+      alt={alt}
+      className={`${className} w-auto object-contain shrink-0 block`}
+    />
   );
 }
 
