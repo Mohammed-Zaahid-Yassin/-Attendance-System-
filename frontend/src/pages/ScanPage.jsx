@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import QRScannerModal from '../components/QRScannerModal';
 import { MvjLogo, DeveloperCredit } from '../components/Branding';
-import { getSavedStudentId, saveStudentId } from '../utils/studentStorage';
 
 /* ─────────────────────────────────────────────────────────────
    Location error code → user-facing message + guidance map
@@ -119,14 +118,6 @@ export default function ScanPage() {
   useEffect(() => {
     if (tokenFromUrl) setToken(tokenFromUrl);
   }, [tokenFromUrl]);
-
-  // ── Autofill remembered Student ID on same device ───────────────────────
-  useEffect(() => {
-    const saved = getSavedStudentId();
-    if (saved) {
-      setStudentId((current) => current ? current : saved);
-    }
-  }, []);
 
   // ── Fetch token requirements when token changes ────────────────────────
   useEffect(() => {
@@ -260,18 +251,10 @@ export default function ScanPage() {
       const res = await axios.post('/api/attendance/mark', payload);
       setStatus('success');
       setResultData(res.data);
-      const canonicalId = res.data?.student?.student_id || payload.student_id;
-      if (canonicalId) {
-        saveStudentId(canonicalId);
-      }
     } catch (err) {
       if (err.response?.status === 409) {
         setStatus('already_marked');
         setResultData(err.response.data);
-        const canonicalId = err.response.data?.student_id || err.response.data?.student?.student_id || payload.student_id;
-        if (canonicalId) {
-          saveStudentId(canonicalId);
-        }
       } else {
         setStatus('error');
         const rawError = err.response?.data?.error || 'Failed to mark attendance. Please verify your details.';
@@ -558,13 +541,10 @@ export default function ScanPage() {
               </label>
               <input
                 id="student-id-input"
-                name="student_id"
                 type="text"
                 required
                 maxLength={20}
                 autoCapitalize="characters"
-                spellCheck="false"
-                autoComplete="username"
                 placeholder="E.g. ARJU3210"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value.toUpperCase())}

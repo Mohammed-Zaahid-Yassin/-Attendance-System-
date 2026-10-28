@@ -254,8 +254,7 @@ router.post('/attendance/mark', (req, res) => {
     // SQLite constraint violation (UNIQUE session_id + student_id)
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
       return res.status(409).json({
-        error: `Attendance is already marked for ${student.name} in ${session.subject_name} (Hour ${session.hour_number}).`,
-        student_id: student.student_id
+        error: `Attendance is already marked for ${student.name} in ${session.subject_name} (Hour ${session.hour_number}).`
       });
     }
     console.error('[Attendance Mark Error]', err);

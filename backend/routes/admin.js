@@ -733,17 +733,7 @@ router.post('/change-password', (req, res) => {
 
   const salt = bcrypt.genSaltSync(10);
   const hash = bcrypt.hashSync(new_password, salt);
-  const updateResult = db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, admin.id);
-  if (!updateResult || updateResult.changes === 0) {
-    return res.status(500).json({ error: 'Failed to commit password change to database' });
-  }
-
-  // Commit and flush WAL pages directly into persistent storage
-  try {
-    db.pragma('wal_checkpoint(PASSIVE)');
-  } catch (cpErr) {
-    console.warn('[DB Checkpoint Notice]', cpErr.message);
-  }
+  db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, admin.id);
 
   return res.json({ success: true, message: 'Password changed successfully' });
 });
