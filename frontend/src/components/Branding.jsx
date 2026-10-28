@@ -15,30 +15,51 @@ export function MvjLogo({ className = 'h-9 sm:h-10', alt = 'MVJ College of Engin
   );
 }
 
+export const NIC_TEAM_URL = 'https://nicmvjce.pages.dev/team';
+
 /**
  * NicLogo — Official NIC Club Logo
+ * Hyperlinked to the official NIC Team directory: https://nicmvjce.pages.dev/team
  */
 export function NicLogo({ className = 'h-5 w-auto', alt = 'NIC Club Logo' }) {
   return (
-    <img
-      src="/nic-logo.png"
-      alt={alt}
-      className={`${className} object-contain shrink-0 block`}
-    />
+    <a
+      href={NIC_TEAM_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center transition hover:opacity-80 active:scale-95 shrink-0"
+      title="NIC Club Team — MVJCE"
+      aria-label="Visit NIC Club Team page"
+    >
+      <img
+        src="/nic-logo.png"
+        alt={alt}
+        className={`${className} object-contain shrink-0 block`}
+      />
+    </a>
   );
 }
 
 /**
  * DeveloperCredit — Official Developer Attribution
  * Displays the required wording: "Developed by NIC Club, MVJCE"
- * alongside the NIC Club logo asset.
+ * alongside the NIC Club logo asset, with hyperlinks to the NIC team page.
  */
 export function DeveloperCredit({ className = '', compact = false }) {
   return (
     <div className={`inline-flex items-center gap-2 text-xs text-[#706860] ${className}`}>
       <NicLogo className="h-5 w-auto" />
       <span className="leading-tight">
-        Developed by <strong className="text-[#a39b94] font-medium">NIC Club, MVJCE</strong>
+        Developed by{' '}
+        <a
+          href={NIC_TEAM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#a39b94] font-medium hover:text-amber-400 hover:underline transition"
+          title="NIC Club Team — MVJCE"
+        >
+          NIC Club, MVJCE
+        </a>
       </span>
     </div>
   );
@@ -47,8 +68,8 @@ export function DeveloperCredit({ className = '', compact = false }) {
 /**
  * QrNicOverlay — Centered NIC Club branding overlay for QR codes.
  *
- * Implements a pure frontend visual layer (pointer-events: none) positioned
- * at the exact geometric center of the QR code.
+ * Implements a centered visual branding layer with a direct link to
+ * the official NIC Club Team directory (https://nicmvjce.pages.dev/team).
  *
  * Sizing & Scan Reliability:
  * - Sized at ~11.5% of the QR code dimensions (covering ~1.3% of surface area).
@@ -60,21 +81,27 @@ export function DeveloperCredit({ className = '', compact = false }) {
 export function QrNicOverlay({ sizePercent = 11.5, className = '' }) {
   return (
     <div
-      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none z-20 flex items-center justify-center ${className}`}
+      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 select-none z-20 flex items-center justify-center ${className}`}
       style={{
         width: `${sizePercent}%`,
         height: `${sizePercent}%`
       }}
-      aria-hidden="true"
     >
-      <div className="w-full h-full bg-white rounded-[18%] shadow-sm border border-neutral-300/80 flex items-center justify-center p-[6%] overflow-hidden">
+      <a
+        href={NIC_TEAM_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="NIC Club Team — MVJCE (Click to view team)"
+        aria-label="Visit NIC Club Team page"
+        className="w-full h-full bg-white rounded-[18%] shadow-sm border border-neutral-300/80 flex items-center justify-center p-[6%] overflow-hidden transition hover:scale-105 active:scale-95 cursor-pointer pointer-events-auto"
+      >
         <img
           src="/nic-logo.png"
           alt="NIC Club"
           className="w-full h-full object-contain block"
           draggable={false}
         />
-      </div>
+      </a>
     </div>
   );
 }

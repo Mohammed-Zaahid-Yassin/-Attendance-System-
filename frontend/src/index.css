@@ -235,6 +235,11 @@ table {
   object-fit: cover !important;
   display: block !important;
   border-radius: 1rem !important;
+  transform: translateZ(0) !important;
+  -webkit-transform: translateZ(0) !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  will-change: transform !important;
 }
 
 /* Subtle dimming for html5-qrcode's shaded region */
@@ -261,6 +266,7 @@ table {
 
 .animate-scan-laser {
   animation: scan-laser 2.4s ease-in-out infinite;
+  will-change: top, opacity;
 }
 
 /* ─────────────────────────────────────────────────────
