@@ -3,7 +3,9 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'attendance.db');
+const dbPath = process.env.DB_PATH 
+  ? (path.isAbsolute(process.env.DB_PATH) ? process.env.DB_PATH : path.resolve(__dirname, process.env.DB_PATH))
+  : path.join(__dirname, 'attendance.db');
 const db = new Database(dbPath);
 
 // Enable WAL mode & high-performance concurrency settings for 1200+ attendees

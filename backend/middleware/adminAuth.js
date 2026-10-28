@@ -25,9 +25,30 @@ function adminAuth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.admin = decoded;
-    next();
+    return next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired session token' });
+    // If not a valid JWT format (not 3 base64 segments), reject synchronously immediately
+    if (typeof token !== 'string' || token.split('.').length !== 3 || err.message === 'jwt malformed') {
+      return res.status(401).json({ error: 'Invalid or expired session token' });
+    }
+
+    // Attempt verification with Neon Auth JWKS if standard JWT verification fails
+    const { verifyNeonToken } = require('../neon/auth');
+    verifyNeonToken(token)
+      .then((neonRes) => {
+        if (neonRes.valid) {
+          req.admin = {
+            id: neonRes.user.sub || 1,
+            username: neonRes.user.email || neonRes.user.username || 'neon_admin',
+            neonUser: neonRes.user
+          };
+          return next();
+        }
+        return res.status(401).json({ error: 'Invalid or expired session token' });
+      })
+      .catch(() => {
+        return res.status(401).json({ error: 'Invalid or expired session token' });
+      });
   }
 }
 

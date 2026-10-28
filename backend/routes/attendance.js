@@ -6,6 +6,7 @@ const db = require('../db');
 const { getCurrentToken } = require('../cron/tokenRotator');
 const { checkGeoFence } = require('../middleware/geoCheck');
 const adminAuth = require('../middleware/adminAuth');
+const { archiveAttendanceExport } = require('../neon/storage');
 
 
 // 1. Get current rotating token and PIN for display screen
@@ -424,6 +425,15 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+  // Asynchronously archive export to Neon Object Storage (assets bucket)
+  archiveAttendanceExport({
+    sessionId,
+    filename,
+    data: Buffer.from(csvContent, 'utf-8'),
+    contentType: 'text/csv'
+  }).catch((err) => console.warn('[Neon Storage Archive CSV Error]', err.message));
+
   return res.send(csvContent);
 });
 
@@ -527,6 +537,15 @@ router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+  // Asynchronously archive export to Neon Object Storage (assets bucket)
+  archiveAttendanceExport({
+    sessionId,
+    filename,
+    data: buffer,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }).catch((err) => console.warn('[Neon Storage Archive XLSX Error]', err.message));
+
   return res.send(buffer);
 });
 

@@ -7,3 +7,5 @@ frontend/dist/
 dist/
 *.log
 scratch/
+.neon
+.env.local

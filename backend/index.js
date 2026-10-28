@@ -1,15 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
-
+require('./neon/env');
 const db = require('./db');
 const { startTokenRotator } = require('./cron/tokenRotator');
+const { initNeonDatabase } = require('./neon/postgres');
 
 const authRoutes = require('./routes/auth');
 const registrationRoutes = require('./routes/registration');
 const attendanceRoutes = require('./routes/attendance');
 const adminRoutes = require('./routes/admin');
+const neonRoutes = require('./neon/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -58,13 +59,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api', registrationRoutes);
 app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/neon', neonRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    engine: 'better-sqlite3 + node-cron',
+    cloud: 'Neon (Postgres, Auth, Storage, Functions, Realtime)',
+    engine: 'Neon Postgres + better-sqlite3 + node-cron',
     theme: 'MVJCE Spotlight'
   });
 });
@@ -89,11 +92,17 @@ if (fs.existsSync(clientDistPath)) {
 // Start Background Cron Engine
 startTokenRotator();
 
+// Initialize Neon Cloud Database asynchronously
+initNeonDatabase(db).catch(err => {
+  console.warn('[Neon Postgres] Startup initialization note:', err.message);
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
-  console.log(`📁 Database: SQLite (better-sqlite3)`);
+  console.log(`☁️ Cloud Platform: Neon (Postgres, Auth, Storage, Functions, Realtime)`);
+  console.log(`📁 Database: Neon Lakebase Postgres (ep-nameless-mountain-az2j1d5a)`);
   console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 19s)`);
   console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890'}`);
   console.log(`👤 Default Admin: username='admin', password='${process.env.ADMIN_PASSWORD || 'admin123'}'`);
