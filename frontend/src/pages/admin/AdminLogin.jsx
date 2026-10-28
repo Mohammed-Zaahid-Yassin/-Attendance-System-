@@ -39,9 +39,9 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080605] flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen min-h-[100dvh] bg-[#080605] flex flex-col items-center justify-center p-4 safe-top safe-bottom">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 sm:p-10 shadow-2xl">
+        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 sm:p-10 shadow-2xl">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
               <MvjLogo className="h-10" />
@@ -84,7 +84,7 @@ export default function AdminLogin() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] pl-10 pr-4 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                  className="w-full min-h-[44px] rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] pl-10 pr-4 py-2.5 text-base sm:text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -102,7 +102,7 @@ export default function AdminLogin() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] pl-10 pr-4 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                  className="w-full min-h-[44px] rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] pl-10 pr-4 py-2.5 text-base sm:text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -110,7 +110,7 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-6 flex w-full min-h-[44px] items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-3 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50"
+              className="mt-6 flex w-full min-h-[44px] items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 py-3 text-xs font-semibold uppercase tracking-wider text-[#080605] shadow-amber-glow transition hover:opacity-95 active:scale-[0.99] disabled:opacity-50"
             >
               {loading ? (
                 <span>Authenticating...</span>

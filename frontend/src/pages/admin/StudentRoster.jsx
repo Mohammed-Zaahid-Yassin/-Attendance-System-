@@ -202,7 +202,7 @@ export default function StudentRoster() {
               value={yearFilter}
               onChange={(e) => setYearFilter(e.target.value)}
               aria-label="Filter roster by academic year"
-              className="w-full rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              className="w-full min-h-[44px] rounded-xl border border-[rgba(255,235,215,0.1)] bg-[#120f0d] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
             >
               <option value="">All Academic Years</option>
               <option value="1">1st Year Only</option>
@@ -265,18 +265,20 @@ export default function StudentRoster() {
                           <button
                             type="button"
                             onClick={() => openEditModal(s)}
-                            className="rounded-lg p-1.5 text-amber-400 hover:bg-amber-500/10 transition"
+                            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg p-2 text-amber-400 hover:bg-amber-500/10 transition active:scale-95"
                             title="Edit student entry"
+                            aria-label={`Edit ${s.name}`}
                           >
-                            <Edit2 className="h-3.5 w-3.5" />
+                            <Edit2 className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteStudent(s.student_id, s.name)}
-                            className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/10 transition"
+                            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg p-2 text-red-400 hover:bg-red-500/10 transition active:scale-95"
                             title="Delete student from database"
+                            aria-label={`Delete ${s.name}`}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -291,8 +293,8 @@ export default function StudentRoster() {
 
       {/* Edit Student Modal */}
       {editingStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm safe-top safe-bottom overflow-y-auto">
+          <div className="relative w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3">
               <div>
                 <h3 className="font-serif text-lg font-normal text-[#f5f0ea]">

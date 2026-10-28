@@ -136,7 +136,7 @@ export default function RegisterPage() {
   // 1. Verifying key state
   if (isVerifyingKey) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080605] p-6 text-center">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-[#080605] p-6 text-center safe-top safe-bottom">
         <div className="flex flex-col items-center">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500"></div>
           <p className="mt-4 text-xs font-medium uppercase tracking-[0.2em] text-[#a39b94]">
@@ -150,8 +150,8 @@ export default function RegisterPage() {
   // 2. Access Denied (Must be scanned via official Admin Static QR)
   if (!isKeyValid) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080605] p-6">
-        <div className="w-full max-w-md rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-8 text-center shadow-2xl flex flex-col items-center">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-[#080605] p-4 sm:p-6 safe-top safe-bottom">
+        <div className="w-full max-w-md rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 sm:p-8 text-center shadow-2xl flex flex-col items-center">
           <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 text-red-400">
             <ShieldAlert className="h-7 w-7" />
@@ -176,8 +176,8 @@ export default function RegisterPage() {
   // 3. Success View
   if (registeredStudent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
-        <div className="w-full max-w-lg rounded-2xl border border-[rgba(240,150,80,0.25)] bg-[#120f0d] p-8 sm:p-10 shadow-2xl flex flex-col items-center">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-[#080605] py-8 sm:py-12 px-4 sm:px-6 safe-top safe-bottom">
+        <div className="w-full max-w-lg rounded-2xl border border-[rgba(240,150,80,0.25)] bg-[#120f0d] p-6 sm:p-10 shadow-2xl flex flex-col items-center">
           <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
             <CheckCircle2 className="h-8 w-8" />
@@ -198,7 +198,7 @@ export default function RegisterPage() {
             <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#a39b94]">
               Your Student ID / Attendance Password
             </span>
-            <div className="mt-2 font-mono text-3xl sm:text-4xl font-bold tracking-[0.18em] text-[#f5f0ea]">
+            <div className="mt-2 font-mono text-2xl xs:text-3xl sm:text-4xl font-bold tracking-[0.16em] text-[#f5f0ea] break-all">
               {registeredStudent.student_id}
             </div>
             <p className="mt-2 text-[11px] text-[#a39b94]">
@@ -208,7 +208,7 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={handleCopyId}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-4 py-2 text-xs font-medium text-[#f5f0ea] transition hover:border-amber-500 hover:text-amber-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500"
+              className="mt-4 inline-flex items-center gap-2 min-h-[44px] rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-5 py-2.5 text-xs font-medium text-[#f5f0ea] transition hover:border-amber-500 hover:text-amber-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500 active:scale-95"
             >
               {copiedId ? (
                 <>
@@ -279,7 +279,7 @@ export default function RegisterPage() {
 
   // 4. Main Registration Form
   return (
-    <div className="min-h-screen bg-[#080605] py-12 px-4 sm:px-6">
+    <div className="min-h-screen min-h-[100dvh] bg-[#080605] py-8 sm:py-12 px-4 sm:px-6 safe-top safe-bottom">
       <div className="mx-auto max-w-xl">
         {/* Header matching Spotlight style */}
         <div className="text-center mb-8">
@@ -319,8 +319,8 @@ export default function RegisterPage() {
           </div>
 
           <div className="mt-3 flex items-baseline justify-between">
-            <div>
-              <div className="font-mono text-3xl sm:text-4xl font-bold tracking-[0.2em] text-[#f5f0ea]">
+            <div className="w-full">
+              <div className="font-mono text-2xl xs:text-3xl sm:text-4xl font-bold tracking-[0.16em] text-[#f5f0ea] break-all">
                 {dynamicStudentID}
               </div>
               <p className="mt-1.5 text-[11px] text-[#a39b94]">
@@ -352,7 +352,7 @@ export default function RegisterPage() {
                 placeholder="e.g. Arjun Sharma"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 text-sm text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full min-h-[46px] rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 text-base sm:text-sm text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
               <span className="mt-1.5 block text-[11px] text-[#706860]">
                 First 4 letters will form the prefix of your unique Student ID.
@@ -372,7 +372,7 @@ export default function RegisterPage() {
                 placeholder="10-digit mobile number"
                 value={formData.mobile}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 font-mono text-sm text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full min-h-[46px] rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-4 py-3 font-mono text-base sm:text-sm text-[#f5f0ea] placeholder-[#554e48] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
               <span className="mt-1.5 block text-[11px] text-[#706860]">
                 Last 4 digits will form the suffix of your unique Student ID.
@@ -384,7 +384,7 @@ export default function RegisterPage() {
               <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a39b94] mb-2">
                 Year of Study <span className="text-amber-500">*</span>
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                 {['1', '2', '3', '4'].map((yr) => {
                   const isSelected = formData.year === yr;
                   return (
@@ -392,7 +392,7 @@ export default function RegisterPage() {
                       key={yr}
                       type="button"
                       onClick={() => setFormData((prev) => ({ ...prev, year: yr }))}
-                      className={`min-h-[44px] rounded-xl border py-2.5 text-xs font-medium transition ${
+                      className={`min-h-[44px] rounded-xl border py-2.5 px-1 text-xs font-medium transition active:scale-95 flex items-center justify-center text-center ${
                         isSelected
                           ? 'border-amber-500 bg-amber-500/15 text-amber-400 font-semibold'
                           : 'border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] hover:border-[rgba(255,235,215,0.2)] hover:text-[#f5f0ea]'

@@ -217,6 +217,53 @@ table {
 }
 
 /* ─────────────────────────────────────────────────────
+   Camera Scanner Viewport & Video Optimization
+───────────────────────────────────────────────────── */
+#qr-reader-container {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  border: none !important;
+  padding: 0 !important;
+  background: #080605 !important;
+  overflow: hidden !important;
+}
+
+#qr-reader-container video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+  border-radius: 1rem !important;
+}
+
+/* Subtle dimming for html5-qrcode's shaded region */
+#qr-reader-container #qr-shaded-region {
+  border-color: rgba(240, 150, 80, 0.4) !important;
+  opacity: 0.4 !important;
+}
+
+/* Scanning laser sweep animation */
+@keyframes scan-laser {
+  0% {
+    top: 10%;
+    opacity: 0.4;
+  }
+  50% {
+    top: 90%;
+    opacity: 1;
+  }
+  100% {
+    top: 10%;
+    opacity: 0.4;
+  }
+}
+
+.animate-scan-laser {
+  animation: scan-laser 2.4s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────────────────
    Print Styles
 ───────────────────────────────────────────────────── */
 @media print {
@@ -228,3 +275,4 @@ table {
     display: none !important;
   }
 }
+

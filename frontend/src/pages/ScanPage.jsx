@@ -279,8 +279,8 @@ export default function ScanPage() {
   // ── SUCCESS STATE ─────────────────────────────────────────────────────
   if (status === 'success' && resultData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
-        <div className="w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-8 sm:p-10 text-center shadow-2xl flex flex-col items-center">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-[#080605] py-8 px-4 sm:px-6 safe-top safe-bottom">
+        <div className="w-full max-w-md rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 sm:p-10 text-center shadow-2xl flex flex-col items-center">
           <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
             <CheckCircle className="h-8 w-8" />
@@ -326,8 +326,8 @@ export default function ScanPage() {
   // ── ALREADY MARKED STATE ──────────────────────────────────────────────
   if (status === 'already_marked') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080605] py-12 px-4 sm:px-6">
-        <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-[#120f0d] p-8 text-center shadow-2xl flex flex-col items-center">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-[#080605] py-8 px-4 sm:px-6 safe-top safe-bottom">
+        <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-[#120f0d] p-6 sm:p-8 text-center shadow-2xl flex flex-col items-center">
           <MvjLogo className="h-10 mb-4" />
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
             <AlertTriangle className="h-7 w-7" />
@@ -342,7 +342,7 @@ export default function ScanPage() {
           <button
             type="button"
             onClick={resetForm}
-            className="mt-6 w-full rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#f5f0ea] hover:bg-[#201c18]"
+            className="mt-6 w-full min-h-[44px] rounded-full border border-[rgba(255,235,215,0.12)] bg-[#181512] py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#f5f0ea] hover:bg-[#201c18] active:scale-[0.99] flex items-center justify-center"
           >
             Back to Submission
           </button>
@@ -356,7 +356,7 @@ export default function ScanPage() {
 
   // ── MAIN ATTENDANCE FORM ──────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#080605] flex flex-col justify-center py-12 px-4 sm:px-6">
+    <div className="min-h-screen min-h-[100dvh] bg-[#080605] flex flex-col justify-start sm:justify-center py-6 sm:py-12 px-4 sm:px-6 safe-top safe-bottom">
       <div className="mx-auto w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
@@ -399,19 +399,19 @@ export default function ScanPage() {
         </div>
 
         {/* QR Token Status */}
-        <div className="mb-3 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className={`h-2.5 w-2.5 rounded-full ${token ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-            <span className="text-xs text-[#f5f0ea] font-medium">
+        <div className="mb-3 flex items-center justify-between rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-3.5 sm:px-4 py-2.5 sm:py-3 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${token ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <span className="text-xs text-[#f5f0ea] font-medium truncate">
               {token ? 'Auditorium QR Linked' : 'No QR Token Detected'}
             </span>
           </div>
           <button
             type="button"
             onClick={() => setIsScannerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-semibold text-amber-400 transition hover:border-amber-500/50 hover:bg-[#201c18]"
+            className="inline-flex items-center gap-1.5 shrink-0 min-h-[44px] rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-2 text-xs font-semibold text-amber-400 transition hover:border-amber-500/50 hover:bg-[#201c18] active:scale-95"
           >
-            <Camera className="h-3.5 w-3.5" />
+            <Camera className="h-4 w-4" />
             <span>{token ? 'Rescan Screen' : 'Open Camera'}</span>
           </button>
         </div>
@@ -450,12 +450,12 @@ export default function ScanPage() {
           </div>
 
           {locationStatus !== 'acquired' && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {locationStatus === 'error' && (
                 <button
                   type="button"
                   onClick={() => setShowLocationHelp((v) => !v)}
-                  className="inline-flex items-center gap-1 rounded-full border border-[rgba(255,235,215,0.1)] bg-[#181512] px-2.5 py-1 text-[11px] text-[#a39b94] hover:text-[#f5f0ea]"
+                  className="inline-flex items-center gap-1 min-h-[38px] rounded-full border border-[rgba(255,235,215,0.1)] bg-[#181512] px-3 py-1 text-[11px] text-[#a39b94] hover:text-[#f5f0ea]"
                 >
                   <Info className="h-3 w-3" />
                   <span>Help</span>
@@ -464,7 +464,7 @@ export default function ScanPage() {
               <button
                 type="button"
                 onClick={() => { acquiredOnceRef.current = false; requestLocation(); }}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20"
+                className="inline-flex items-center gap-1 min-h-[38px] rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20 active:scale-95"
               >
                 <RotateCcw className="h-3 w-3" />
                 <span>Retry GPS</span>
@@ -571,7 +571,7 @@ export default function ScanPage() {
                   placeholder="Enter 6-digit PIN"
                   value={uniquePin}
                   onChange={(e) => setUniquePin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-base font-medium leading-normal tracking-wide text-amber-400 placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
+                  className="w-full h-12 rounded-xl border border-[rgba(255,235,215,0.14)] bg-[#181512] px-4 font-mono text-center text-lg sm:text-xl font-bold leading-normal tracking-[0.2em] text-amber-400 placeholder:font-mono placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#665e56] transition focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 box-border"
                 />
                 <p className="mt-1.5 text-[11px] text-[#706860]">
                   Enter the 6-digit PIN currently displayed on the auditorium screen.

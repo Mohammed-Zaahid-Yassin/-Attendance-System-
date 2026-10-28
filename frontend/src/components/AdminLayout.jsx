@@ -32,9 +32,9 @@ export default function AdminLayout({ children }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#080605] text-[#f5f0ea] flex flex-col md:flex-row">
+    <div className="min-h-screen min-h-[100dvh] bg-[#080605] text-[#f5f0ea] flex flex-col md:flex-row">
       {/* Mobile Top Header */}
-      <div className="flex md:hidden items-center justify-between border-b border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3">
+      <div className="flex md:hidden items-center justify-between border-b border-[rgba(255,235,215,0.08)] bg-[#120f0d] px-4 py-3 safe-top">
         <div className="flex items-center gap-2.5">
           <MvjLogo className="h-7" />
           <span className="font-serif text-lg font-normal text-[#f5f0ea]">
@@ -42,8 +42,10 @@ export default function AdminLayout({ children }) {
           </span>
         </div>
         <button
+          type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="rounded-lg p-2 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]"
+          aria-label={mobileMenuOpen ? 'Close Navigation Menu' : 'Open Navigation Menu'}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg p-2 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea] active:scale-95"
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
@@ -53,7 +55,7 @@ export default function AdminLayout({ children }) {
       <aside
         className={`${
           mobileMenuOpen ? 'block' : 'hidden'
-        } md:block w-full md:w-64 shrink-0 border-r border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5 md:min-h-screen flex flex-col justify-between`}
+        } md:block w-full md:w-64 shrink-0 border-r border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5 md:min-h-screen flex flex-col justify-between safe-bottom`}
       >
         <div>
           {/* Brand Logo */}
@@ -79,15 +81,15 @@ export default function AdminLayout({ children }) {
                   to={item.path}
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                    `flex items-center gap-3 min-h-[44px] rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
                       isActive
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                         : 'text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]'
                     }`
                   }
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
                 </NavLink>
               );
             })}
@@ -101,7 +103,7 @@ export default function AdminLayout({ children }) {
             href="/display"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-between rounded-xl border border-[rgba(240,150,80,0.3)] bg-gradient-to-r from-[#18130e] to-[#14100c] px-3.5 py-2.5 text-xs font-semibold text-amber-400 transition hover:border-amber-500/60"
+            className="flex min-h-[44px] items-center justify-between rounded-xl border border-[rgba(240,150,80,0.3)] bg-gradient-to-r from-[#18130e] to-[#14100c] px-3.5 py-2.5 text-xs font-semibold text-amber-400 transition hover:border-amber-500/60"
           >
             <div className="flex items-center gap-2">
               <Tv className="h-4 w-4" />
@@ -112,8 +114,9 @@ export default function AdminLayout({ children }) {
 
           {/* Logout */}
           <button
+            type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
+            className="flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
           >
             <LogOut className="h-4 w-4" />
             <span>Sign Out</span>

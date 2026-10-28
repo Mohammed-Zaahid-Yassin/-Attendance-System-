@@ -176,8 +176,8 @@ function SavedLocationModal({ location, onSave, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-2xl rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-sm safe-top safe-bottom overflow-y-auto">
+      <div className="relative w-full max-w-2xl rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-5 sm:p-6 shadow-2xl overflow-y-auto max-h-[92dvh]">
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-serif text-xl text-[#f5f0ea]">
             {isNew ? 'New Location Preset' : 'Edit Preset'}

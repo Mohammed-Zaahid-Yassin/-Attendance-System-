@@ -624,8 +624,8 @@ export default function AdminDashboard() {
 
         {/* Modal: Edit Geofence for Active Session (3 Options) */}
         {editingGeofenceSession && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="w-full max-w-2xl rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-6 sm:p-8 shadow-2xl space-y-6 my-8">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 safe-top safe-bottom overflow-y-auto">
+            <div className="w-full max-w-2xl max-h-[92dvh] overflow-y-auto rounded-2xl border border-[rgba(240,150,80,0.3)] bg-[#120f0d] p-5 sm:p-8 shadow-2xl space-y-6 my-auto">
               <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-4">
                 <div>
                   <h3 className="font-serif text-xl font-normal text-[#f5f0ea]">
