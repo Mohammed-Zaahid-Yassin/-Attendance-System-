@@ -189,11 +189,6 @@ router.get('/admin/registration-qr', adminAuth, requirePermission('view_registra
       'https://attendance-system-mvjce.vercel.app'
     ).replace(/\/$/, '');
 
-    // Safeguard: if origin points to the Render backend service, rewrite to Vercel
-    if (frontendOrigin.includes('onrender.com')) {
-      frontendOrigin = 'https://attendance-system-mvjce.vercel.app';
-    }
-
     const registrationUrl = `${frontendOrigin}/register?key=${encodeURIComponent(REGISTRATION_KEY)}`;
 
     // 512x512 with pure black modules — maximum compatibility with native

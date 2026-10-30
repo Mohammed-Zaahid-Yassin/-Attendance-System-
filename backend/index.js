@@ -61,8 +61,13 @@ app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/neon', neonRoutes);
 
+// Fallback mounts in case proxy rewrites strip the /api prefix
+app.use('/auth', authRoutes);
+app.use('/admin', adminRoutes);
+app.use('/neon', neonRoutes);
+
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -97,14 +102,18 @@ initNeonDatabase(db).catch(err => {
   console.warn('[Neon Postgres] Startup initialization note:', err.message);
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
-  console.log(`☁️ Cloud Platform: Neon (Postgres, Auth, Storage, Functions, Realtime)`);
-  console.log(`📁 Database: Neon Lakebase Postgres (ep-nameless-mountain-az2j1d5a)`);
-  console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 19s)`);
-  console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890'}`);
-  console.log(`👤 Default Admin: username='admin', password='${process.env.ADMIN_PASSWORD || 'admin123'}'`);
-  console.log(`=======================================================`);
-});
+// Start Server in standalone mode (local dev, Docker)
+if (!process.env.VERCEL && require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
+    console.log(`☁️ Cloud Platform: Neon (Postgres, Auth, Storage, Functions, Realtime)`);
+    console.log(`📁 Database: Neon Lakebase Postgres (ep-nameless-mountain-az2j1d5a)`);
+    console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 19s)`);
+    console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890'}`);
+    console.log(`👤 Default Admin: username='admin'`);
+    console.log(`=======================================================`);
+  });
+}
+
+module.exports = app;

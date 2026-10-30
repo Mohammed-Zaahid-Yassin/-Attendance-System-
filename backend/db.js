@@ -3,9 +3,25 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-const dbPath = process.env.DB_PATH 
+const fs = require('fs');
+const isVercel = Boolean(process.env.VERCEL);
+
+let dbPath = process.env.DB_PATH 
   ? (path.isAbsolute(process.env.DB_PATH) ? process.env.DB_PATH : path.resolve(__dirname, process.env.DB_PATH))
-  : path.join(__dirname, 'attendance.db');
+  : (isVercel ? path.join('/tmp', 'attendance.db') : path.join(__dirname, 'attendance.db'));
+
+// On Vercel serverless environment, copy bundled seed DB to /tmp if not already present
+if (isVercel && !fs.existsSync(dbPath)) {
+  const bundledDbPath = path.join(__dirname, 'attendance.db');
+  if (fs.existsSync(bundledDbPath)) {
+    try {
+      fs.copyFileSync(bundledDbPath, dbPath);
+    } catch (e) {
+      console.warn('[DB] Could not copy bundled DB to /tmp:', e.message);
+    }
+  }
+}
+
 const db = new Database(dbPath);
 
 // Enable WAL mode & high-performance concurrency settings for 1200+ attendees

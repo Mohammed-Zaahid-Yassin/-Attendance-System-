@@ -315,5 +315,138 @@ test('RBAC & User Management Suite', async (t) => {
       db.prepare('DELETE FROM admins WHERE id = ?').run(createdQrMgrId);
     });
   });
+
+  await t.test('4. Live HTTP API Endpoints for /api/admin/users', async (sub) => {
+    const http = require('http');
+    const app = require('../index');
+    const server = http.createServer(app);
+    let port, baseUrl;
+
+    await new Promise(resolve => {
+      server.listen(0, () => {
+        port = server.address().port;
+        baseUrl = `http://127.0.0.1:${port}`;
+        resolve();
+      });
+    });
+
+    const primaryAdmin = db.prepare('SELECT * FROM admins WHERE id = 1').get();
+    const token = jwt.sign(
+      { id: primaryAdmin.id, username: primaryAdmin.username, role: 'super_admin' },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+    const authHeaders = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+
+    let liveCreatedId = null;
+
+    try {
+      // 4a. Unauthenticated POST /api/admin/users returns 401
+      await sub.test('4a. Unauthenticated POST returns 401', async () => {
+        const res = await fetch(`${baseUrl}/api/admin/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'unauth_user', password: 'password123' })
+        });
+        assert.equal(res.status, 401);
+      });
+
+      // 4b. Authenticated POST /api/admin/users creates user (returns 201)
+      await sub.test('4b. Authenticated POST /api/admin/users returns 201', async () => {
+        db.prepare("DELETE FROM admins WHERE username = 'live_test_user'").run();
+        const res = await fetch(`${baseUrl}/api/admin/users`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            username: 'live_test_user',
+            password: 'valid_password_123',
+            confirm_password: 'valid_password_123',
+            display_name: 'Live Test Teacher',
+            role: 'attendance_manager'
+          })
+        });
+
+        assert.equal(res.status, 201);
+        const data = await res.json();
+        assert.equal(data.success, true);
+        assert.equal(data.user.username, 'live_test_user');
+        assert.equal(data.user.display_name, 'Live Test Teacher');
+        assert.equal(data.user.role, 'attendance_manager');
+        assert.equal(data.user.password_hash, undefined, 'Must never return password hash');
+        liveCreatedId = data.user.id;
+        assert.ok(liveCreatedId, 'Must return created user ID');
+      });
+
+      // 4c. GET /api/admin/users returns list including newly created user
+      await sub.test('4c. GET /api/admin/users includes created user', async () => {
+        const res = await fetch(`${baseUrl}/api/admin/users`, {
+          headers: authHeaders
+        });
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data.success, true);
+        assert.ok(Array.isArray(data.users));
+        const found = data.users.find(u => u.username === 'live_test_user');
+        assert.ok(found, 'Created user must be found in user list');
+        assert.equal(found.role, 'attendance_manager');
+        assert.equal(found.is_active, true);
+        assert.equal(found.password_hash, undefined);
+      });
+
+      // 4d. Duplicate POST /api/admin/users returns 409 Conflict
+      await sub.test('4d. Duplicate POST /api/admin/users returns 409 Conflict', async () => {
+        const res = await fetch(`${baseUrl}/api/admin/users`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            username: 'LIVE_TEST_USER',
+            password: 'valid_password_123',
+            confirm_password: 'valid_password_123',
+            role: 'attendance_manager'
+          })
+        });
+        assert.equal(res.status, 409);
+        const data = await res.json();
+        assert.ok(data.error && data.error.includes('already taken'));
+      });
+
+      // 4e. PUT /api/admin/users/:id updates user details
+      await sub.test('4e. PUT /api/admin/users/:id updates user details', async () => {
+        const res = await fetch(`${baseUrl}/api/admin/users/${liveCreatedId}`, {
+          method: 'PUT',
+          headers: authHeaders,
+          body: JSON.stringify({
+            display_name: 'Updated Live Teacher',
+            role: 'qr_manager'
+          })
+        });
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data.success, true);
+        assert.equal(data.user.display_name, 'Updated Live Teacher');
+        assert.equal(data.user.role, 'qr_manager');
+      });
+
+      // 4f. DELETE /api/admin/users/:id deletes user
+      await sub.test('4f. DELETE /api/admin/users/:id deletes user', async () => {
+        const res = await fetch(`${baseUrl}/api/admin/users/${liveCreatedId}`, {
+          method: 'DELETE',
+          headers: authHeaders
+        });
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data.success, true);
+
+        // Verify it no longer exists
+        const check = db.prepare('SELECT id FROM admins WHERE id = ?').get(liveCreatedId);
+        assert.equal(check, undefined);
+      });
+    } finally {
+      await new Promise(res => server.close(res));
+    }
+  });
 });
 

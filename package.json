@@ -13,9 +13,18 @@
     "@neon/env": "^1.6.6",
     "@neon/realtime": "^0.1.2",
     "@neondatabase/serverless": "^1.2.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
     "dotenv": "^18.0.9",
+    "express": "^4.18.3",
     "jose": "^6.2.13",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
     "pg": "^8.23.1",
-    "ws": "^8.22.0"
+    "qrcode": "^1.5.3",
+    "uuid": "^9.0.1",
+    "ws": "^8.22.0",
+    "xlsx": "^0.18.5"
   }
 }

@@ -155,6 +155,9 @@ function startTokenRotator() {
   }
 
   rotatorTimer = setInterval(rotateActiveSessions, 1000);
+  if (rotatorTimer && typeof rotatorTimer.unref === 'function') {
+    rotatorTimer.unref();
+  }
   console.log('[TokenRotator] Rotation engine started: 30-35s randomized window per session');
 }
 

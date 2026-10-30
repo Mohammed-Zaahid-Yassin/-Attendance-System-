@@ -272,6 +272,22 @@ async function syncFromSqlite(pgClient, sqliteDb) {
         await pgClient.query(`SELECT setval('attendance_id_seq', (SELECT COALESCE(MAX(id), 1) FROM attendance))`);
       }
     }
+
+    // Admins
+    const adminCountRes = await pgClient.query('SELECT COUNT(*) as count FROM admins');
+    if (parseInt(adminCountRes.rows[0].count, 10) <= 1) {
+      const sqliteAdmins = sqliteDb.prepare('SELECT * FROM admins').all();
+      if (sqliteAdmins.length > 0) {
+        for (const adm of sqliteAdmins) {
+          await pgClient.query(`
+            INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (username) DO UPDATE
+            SET display_name = EXCLUDED.display_name, role = EXCLUDED.role, permissions = EXCLUDED.permissions, is_active = EXCLUDED.is_active, updated_at = NOW()
+          `, [adm.username, adm.password_hash, adm.display_name, adm.role, adm.permissions, adm.is_active, adm.created_at || new Date().toISOString(), adm.updated_at || new Date().toISOString()]);
+        }
+      }
+    }
   } catch (err) {
     console.error('[Neon Postgres Sync Error]', err.message);
   }
