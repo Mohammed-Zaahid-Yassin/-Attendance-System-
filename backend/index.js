@@ -94,17 +94,22 @@ if (fs.existsSync(clientDistPath)) {
   console.log(`[Static] Serving frontend from: ${clientDistPath}`);
 }
 
-// Start Background Cron Engine
-startTokenRotator();
+// Start Background Cron Engine (only for standalone / Docker long-running processes)
+if (!process.env.VERCEL) {
+  startTokenRotator();
+}
 
 // Initialize Neon Cloud Database asynchronously
-initNeonDatabase(db).catch(err => {
-  console.warn('[Neon Postgres] Startup initialization note:', err.message);
-});
+if (!process.env.VERCEL) {
+  initNeonDatabase(db).catch(err => {
+    console.warn('[Neon Postgres] Startup initialization note:', err.message);
+  });
+}
 
 // Start Server in standalone mode (local dev, Docker)
+let server = null;
 if (!process.env.VERCEL && require.main === module) {
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
     console.log(`☁️ Cloud Platform: Neon (Postgres, Auth, Storage, Functions, Realtime)`);
@@ -115,5 +120,40 @@ if (!process.env.VERCEL && require.main === module) {
     console.log(`=======================================================`);
   });
 }
+
+// Graceful application shutdown
+function gracefulShutdown(signal) {
+  console.log(`\n[Process] Received ${signal}. Starting graceful shutdown...`);
+  try {
+    const { stopTokenRotator } = require('./cron/tokenRotator');
+    stopTokenRotator();
+  } catch {}
+
+  if (server) {
+    server.close(() => {
+      console.log('[Process] HTTP server closed.');
+      try {
+        if (db && typeof db.close === 'function') {
+          db.close();
+          console.log('[Process] SQLite database connection closed.');
+        }
+      } catch (err) {
+        console.warn('[Process] Error closing database:', err.message);
+      }
+      process.exit(0);
+    });
+
+    // Force exit if not closed within 10 seconds
+    setTimeout(() => {
+      console.error('[Process] Forceful shutdown after timeout.');
+      process.exit(1);
+    }, 10000).unref();
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;

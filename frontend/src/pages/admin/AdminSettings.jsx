@@ -963,7 +963,11 @@ export default function AdminSettings() {
     setLoadingUsers(true);
     axios.get('/api/admin/users', axiosConfig)
       .then((res) => {
-        setUsers(res.data?.users || []);
+        if (res.data && Array.isArray(res.data.users)) {
+          setUsers(res.data.users);
+        } else {
+          setUsers([]);
+        }
         setUserError('');
       })
       .catch((err) => {
@@ -977,10 +981,20 @@ export default function AdminSettings() {
   const handleCreateUser = async (newUserData) => {
     setUserMsg('');
     setUserError('');
-    const res = await axios.post('/api/admin/users', newUserData, axiosConfig);
-    setUserMsg(res.data?.message || 'User created successfully');
-    loadUsers();
-    setTimeout(() => setUserMsg(''), 4000);
+    try {
+      const res = await axios.post('/api/admin/users', newUserData, axiosConfig);
+      setUserMsg(res.data?.message || 'User created successfully');
+      loadUsers();
+      setTimeout(() => setUserMsg(''), 4000);
+      return res.data;
+    } catch (err) {
+      const errorMsg = err.response?.data?.error 
+        || (typeof err.response?.data === 'string' ? err.response.data : null)
+        || err.message 
+        || 'Failed to create user';
+      setUserError(errorMsg);
+      throw err;
+    }
   };
 
   const handleUpdateUser = async (userId, updateData) => {
@@ -1853,12 +1867,14 @@ export default function AdminSettings() {
                   </tr>
                 ) : (
                   users.map((u) => {
+                    if (!u || typeof u !== 'object') return null;
                     const isPrimary = u.id === 1 || u.username === 'admin';
                     const perms = Array.isArray(u.permissions) ? u.permissions : [];
                     const isSuper = u.role === 'super_admin' || perms.includes('*');
+                    const initial = ((u.display_name || u.username || 'U')[0] || 'U').toUpperCase();
 
                     return (
-                      <tr key={u.id} className="hover:bg-[#181512]/60 transition">
+                      <tr key={u.id || Math.random()} className="hover:bg-[#181512]/60 transition">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <div className="h-8 w-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
@@ -1866,7 +1882,7 @@ export default function AdminSettings() {
                                 <Shield className="h-4 w-4 text-amber-400" />
                               ) : (
                                 <span className="font-semibold text-amber-400 uppercase text-[11px]">
-                                  {(u.display_name || u.username)[0]}
+                                  {initial}
                                 </span>
                               )}
                             </div>

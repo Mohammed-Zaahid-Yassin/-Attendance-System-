@@ -1,7 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "installCommand": "npm install && cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "node_modules/better-sqlite3/build/Release/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",

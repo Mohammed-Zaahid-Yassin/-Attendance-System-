@@ -1,23 +1,23 @@
 # ==============================================================================
-# Stage 1: Build React Frontend
+# Stage 1: Build React Frontend Assets
 # ==============================================================================
 FROM node:20-bookworm-slim AS frontend-builder
 WORKDIR /build/frontend
 
-# Install dependencies
+# Install frontend dependencies
 COPY frontend/package*.json ./
 RUN npm ci
 
-# Copy source and build
+# Copy frontend source and build static distribution
 COPY frontend/ ./
 RUN npm run build
 
 # ==============================================================================
-# Stage 2: Production Backend & SQLite Engine
+# Stage 2: Production Backend & Static Serving Engine
 # ==============================================================================
 FROM node:20-bookworm-slim AS runner
 
-# Install python3, make, g++ for better-sqlite3 native compilation
+# Install compilation tools for native C++ modules (better-sqlite3) and curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
@@ -27,38 +27,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install backend production dependencies
+# Install production backend dependencies
 COPY backend/package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && \
+    apt-get purge -y --auto-remove python3 make g++ && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy backend source
+# Copy backend application source
 COPY backend/ ./
 
-# Copy compiled frontend from Stage 1 into backend's public directory
+# Copy compiled frontend distribution from Stage 1 into backend's public directory
 COPY --from=frontend-builder /build/frontend/dist ./public
 
-# Create persistent data directory for SQLite database
+# Setup persistent directory for SQLite database storage
 RUN mkdir -p /app/data && chown -R node:node /app
 
-# Switch to non-root user
+# Non-root user execution
 USER node
 
-# Production Environment Variables
+# Production Runtime Configuration
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DB_PATH=/app/data/attendance.db
-ENV REGISTRATION_KEY=STATIC_REG_QR_KEY_SECRET_7890
-ENV ADMIN_USERNAME=admin
-ENV ADMIN_PASSWORD=22Mon08Aug2005
-ENV JWT_SECRET=spotlight_mvjce_production_secret_key_2026
 
-# Persistent volume for SQLite data
-VOLUME ["/app/data"]
-
+# Expose HTTP port
 EXPOSE 3001
 
-# Healthcheck
+# Container Healthcheck (polls authoritative /api/health endpoint)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3001/api/health || exit 1
 
+# Graceful signal handling via Node.js
 CMD ["node", "index.js"]

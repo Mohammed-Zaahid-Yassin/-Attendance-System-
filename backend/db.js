@@ -22,14 +22,25 @@ if (isVercel && !fs.existsSync(dbPath)) {
   }
 }
 
-const db = new Database(dbPath);
+let db;
+try {
+  db = new Database(dbPath);
+} catch (openErr) {
+  console.warn(`[DB] Could not open database at '${dbPath}':`, openErr.message);
+  console.log('[DB] Falling back to high-resilience in-memory SQLite database');
+  db = new Database(':memory:');
+}
 
-// Enable WAL mode & high-performance concurrency settings for 1200+ attendees
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-db.pragma('cache_size = -64000'); // 64MB memory cache
-db.pragma('temp_store = MEMORY');
-db.pragma('foreign_keys = ON');
+// Enable concurrency settings; fallback to DELETE mode if WAL is unsupported (e.g. tmpfs)
+try {
+  db.pragma('journal_mode = WAL');
+} catch (walErr) {
+  try { db.pragma('journal_mode = DELETE'); } catch {}
+}
+try { db.pragma('synchronous = NORMAL'); } catch {}
+try { db.pragma('cache_size = -64000'); } catch {} // 64MB memory cache
+try { db.pragma('temp_store = MEMORY'); } catch {}
+try { db.pragma('foreign_keys = ON'); } catch {}
 
 // Initialize database tables
 function initDb() {
