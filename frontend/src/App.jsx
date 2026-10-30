@@ -80,6 +80,18 @@ export default function App() {
           }
         />
 
+        {/* Admin Navigation Alias Routes */}
+        <Route path="/admin/overview" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin/control-center" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin/data" element={<Navigate to="/admin/students" replace />} />
+        <Route path="/admin/roster" element={<Navigate to="/admin/students" replace />} />
+        <Route path="/admin/student-roster" element={<Navigate to="/admin/students" replace />} />
+        <Route path="/admin/live" element={<Navigate to="/admin/attendance" replace />} />
+        <Route path="/admin/live-attendance" element={<Navigate to="/admin/attendance" replace />} />
+        <Route path="/admin/live-roster" element={<Navigate to="/admin/attendance" replace />} />
+        <Route path="/admin/users" element={<Navigate to="/admin/settings" replace />} />
+        <Route path="/admin/user-management" element={<Navigate to="/admin/settings" replace />} />
+
         {/* Default route redirects to Student Scan page */}
         <Route path="/" element={<Navigate to="/scan" replace />} />
         <Route path="*" element={<Navigate to="/scan" replace />} />

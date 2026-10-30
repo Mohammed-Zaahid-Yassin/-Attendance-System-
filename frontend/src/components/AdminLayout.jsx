@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -9,30 +9,67 @@ import {
   Tv, 
   Menu, 
   X, 
-  QrCode,
-  Sparkles,
   Shield,
   User
 } from 'lucide-react';
 import { MvjLogo, DeveloperCredit } from './Branding';
+import axios from 'axios';
 
 export default function AdminLayout({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  const currentUser = useMemo(() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('admin_user')) || null;
     } catch {
       return null;
     }
-  }, []);
+  });
+
+  // Proactive session validation: Verify token with backend on mount
+  // to refresh user role and permissions in case of updates or legacy sessions
+  useEffect(() => {
+    const token = localStorage.getItem('admin_token');
+    if (token) {
+      axios.get('/api/auth/verify', { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => {
+          if (res.data?.admin) {
+            const updated = res.data.admin;
+            localStorage.setItem('admin_user', JSON.stringify(updated));
+            setCurrentUser(updated);
+          }
+        })
+        .catch(err => {
+          if (err.response?.status === 401 || err.response?.status === 403) {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_user');
+            navigate('/admin');
+          }
+        });
+    }
+  }, [navigate]);
 
   const hasPerm = (perm) => {
-    if (!currentUser) return true;
-    if (currentUser.role === 'super_admin') return true;
-    const perms = Array.isArray(currentUser.permissions) ? currentUser.permissions : [];
+    // 1. If no user object or missing role -> default grant full access (legacy session safety)
+    if (!currentUser || !currentUser.role) return true;
+    // 2. Primary administrator always has unconditional access
+    if (currentUser.username === 'admin' || currentUser.id === 1) return true;
+    if (currentUser.role === 'super_admin' || currentUser.role === 'admin') return true;
+
+    // 3. Permission checks (supporting array or JSON-stringified permissions)
+    let perms = currentUser.permissions;
+    if (typeof perms === 'string') {
+      try {
+        perms = JSON.parse(perms);
+      } catch {
+        perms = [perms];
+      }
+    }
+    if (!Array.isArray(perms)) perms = [];
     if (perms.includes('*') || perms.includes(perm)) return true;
+
+    // 4. Role-based fallback presets
     if (currentUser.role === 'attendance_manager') {
       const allowed = ['view_dashboard', 'view_live_attendance', 'manage_live_attendance', 'manage_attendance_qr', 'view_students', 'view_reports', 'export_reports'];
       if (allowed.includes(perm)) return true;
@@ -41,6 +78,7 @@ export default function AdminLayout({ children }) {
       const allowed = ['view_dashboard', 'view_registration_qr', 'display_registration_qr', 'manage_attendance_qr'];
       if (allowed.includes(perm)) return true;
     }
+
     return false;
   };
 
@@ -51,18 +89,21 @@ export default function AdminLayout({ children }) {
   };
 
   const allNavItems = [
-    { label: 'Control Center', path: '/admin/dashboard', icon: LayoutDashboard, perm: 'view_dashboard' },
-    { label: 'Live Attendance', path: '/admin/attendance', icon: Radio, perm: 'view_live_attendance' },
-    { label: 'Student Roster', path: '/admin/students', icon: Users, perm: 'view_students' },
-    { label: 'Registration & Settings', path: '/admin/settings', icon: Settings, perm: 'manage_settings' },
+    { label: 'Control Center', path: '/admin/dashboard', icon: LayoutDashboard, perm: 'view_dashboard', subtitle: 'Overview' },
+    { label: 'Live Attendance', path: '/admin/attendance', icon: Radio, perm: 'view_live_attendance', subtitle: 'Live Roster' },
+    { label: 'Student Roster', path: '/admin/students', icon: Users, perm: 'view_students', subtitle: 'Data' },
+    { label: 'Settings', path: '/admin/settings', icon: Settings, perm: 'manage_settings', subtitle: 'System & Users' },
   ];
 
-  const navItems = allNavItems.filter(item => {
+  const filteredNavItems = allNavItems.filter(item => {
     if (item.path === '/admin/settings') {
       return hasPerm('manage_settings') || hasPerm('view_registration_qr') || hasPerm('manage_users');
     }
     return hasPerm(item.perm);
   });
+
+  // Fail-safe: navItems must NEVER be empty under any circumstances
+  const navItems = filteredNavItems.length > 0 ? filteredNavItems : allNavItems;
 
   const getRoleLabel = (role) => {
     switch (role) {
@@ -98,7 +139,7 @@ export default function AdminLayout({ children }) {
       <aside
         className={`${
           mobileMenuOpen ? 'block' : 'hidden'
-        } md:block w-full md:w-64 shrink-0 border-r border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5 md:min-h-screen flex flex-col justify-between safe-bottom`}
+        } md:block w-full md:w-64 shrink-0 border-r border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-5 md:min-h-screen md:h-screen md:sticky md:top-0 overflow-y-auto flex flex-col justify-between safe-bottom`}
       >
         <div>
           {/* Brand Logo */}
@@ -124,15 +165,22 @@ export default function AdminLayout({ children }) {
                   to={item.path}
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 min-h-[44px] rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                    `flex items-center justify-between min-h-[44px] rounded-xl px-3.5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${
                       isActive
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                         : 'text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]'
                     }`
                   }
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <div className="flex items-center gap-3">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.subtitle && (
+                    <span className="text-[9px] font-mono opacity-50 lowercase tracking-normal">
+                      {item.subtitle}
+                    </span>
+                  )}
                 </NavLink>
               );
             })}
@@ -204,7 +252,45 @@ export default function AdminLayout({ children }) {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
-        <div>{children}</div>
+        <div>
+          {/* Top Horizontal Quick Navigation Bar (Visible on all viewports) */}
+          <div className="mb-6 flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3 overflow-x-auto scrollbar-none gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={`top-${item.path}`}
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
+                        isActive
+                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/40 shadow-sm'
+                          : 'text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea] border border-transparent'
+                      }`
+                    }
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+            <div className="hidden sm:flex items-center gap-2 shrink-0">
+              <a
+                href="/display"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-xl border border-[rgba(240,150,80,0.3)] bg-[#18130e] px-3 py-1.5 text-xs font-semibold text-amber-400 hover:border-amber-500/60 transition"
+              >
+                <Tv className="h-3.5 w-3.5" />
+                <span>Projector</span>
+              </a>
+            </div>
+          </div>
+
+          {children}
+        </div>
         <footer className="mt-8 pt-4 border-t border-[rgba(255,235,215,0.06)] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#706860]">
           <span>MVJ College of Engineering • Departmental Lecture &amp; Event Attendance Portal</span>
           <DeveloperCredit />
