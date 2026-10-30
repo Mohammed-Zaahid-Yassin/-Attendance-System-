@@ -17,10 +17,12 @@ import {
   Shield,
   Layers,
   ChevronDown,
-  Navigation
+  Navigation,
+  Maximize2
 } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
 import { QrNicOverlay } from '../../components/Branding';
+import FullscreenRegistrationModal from '../../components/FullscreenRegistrationModal';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
@@ -64,6 +66,7 @@ export default function AdminDashboard() {
   // Static QR Code data for student registration
   const [staticQrData, setStaticQrData] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showFullscreenReg, setShowFullscreenReg] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState('');
@@ -1259,11 +1262,22 @@ export default function AdminDashboard() {
           {/* Static Student Registration QR Card (User Requirement!) */}
           <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 shadow-xl flex flex-col justify-between">
             <div>
-              <div className="flex items-center gap-2 text-amber-400 mb-2">
-                <QrCode className="h-4 w-4" />
-                <span className="text-[11px] font-semibold uppercase tracking-wider">
-                  Static Registration QR
-                </span>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <QrCode className="h-4 w-4" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider">
+                    Static Registration QR
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFullscreenReg(true)}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:bg-amber-500/20 transition"
+                  title="Open Dedicated Fullscreen Presentation"
+                >
+                  <Maximize2 className="h-3 w-3" />
+                  <span>Fullscreen</span>
+                </button>
               </div>
               <h3 className="font-serif text-xl font-normal text-[#f5f0ea]">
                 Student Enrollment Code
@@ -1273,20 +1287,37 @@ export default function AdminDashboard() {
               </p>
 
               <div className="mt-6 flex flex-col items-center">
-                <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-lg">
+                <div 
+                  onClick={() => setShowFullscreenReg(true)}
+                  className="group relative cursor-pointer rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-lg hover:border-amber-400 hover:shadow-[0_0_25px_rgba(240,150,80,0.25)] transition duration-200"
+                  title="Click to view Fullscreen Registration QR"
+                >
                   <div className="relative flex items-center justify-center">
                     <img
                       src={displayQrSrc}
                       alt="Confidential Student Registration Static QR"
-                      className="h-44 w-44 object-contain block"
+                      className="h-44 w-44 object-contain block group-hover:scale-[1.02] transition-transform duration-200"
                     />
                     <QrNicOverlay />
+                  </div>
+                  <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs font-semibold gap-1 backdrop-blur-[1px]">
+                    <Maximize2 className="h-6 w-6 text-amber-300 drop-shadow" />
+                    <span className="text-amber-200 drop-shadow">Click for Fullscreen</span>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="mt-6 space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowFullscreenReg(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/20 to-amber-600/20 py-2.5 text-xs font-semibold text-amber-300 hover:from-amber-500/30 hover:to-amber-600/30 transition shadow-sm"
+              >
+                <Maximize2 className="h-3.5 w-3.5 text-amber-400" />
+                <span>Fullscreen Registration QR</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleCopyLink}
@@ -1310,6 +1341,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      <FullscreenRegistrationModal
+        isOpen={showFullscreenReg}
+        onClose={() => setShowFullscreenReg(false)}
+        qrSrc={displayQrSrc}
+        registrationUrl={effectiveRegUrl}
+      />
     </AdminLayout>
   );
 }

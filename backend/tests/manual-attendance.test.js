@@ -1,391 +1,677 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const express = require('express');
+const http = require('http');
 const jwt = require('jsonwebtoken');
+const XLSX = require('xlsx');
 const db = require('../db');
+const adminRoutes = require('../routes/admin');
+const attendanceRoutes = require('../routes/attendance');
+const registrationRoutes = require('../routes/registration');
 const { generateTokenForSession } = require('../cron/tokenRotator');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'attendance_secure_jwt_secret_key_2024_xyz';
+const JWT_SECRET = process.env.JWT_SECRET || 'spotlight_mvjce_production_secret_key_2026';
 
 function createAdminToken(username = 'admin') {
   return jwt.sign({ id: 1, username }, JWT_SECRET, { expiresIn: '1h' });
 }
 
-test('Manual Attendance Scenario 1: Mark attendance for an existing registered student', () => {
-  const sessionRes = db.prepare(`
-    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
-    VALUES ('Scenario 1 Session', 'S1-101', 1, 'admin', 1, 0, 0)
-  `).run();
-  const sessionId = sessionRes.lastInsertRowid;
-  const testUsn = '1MJ24REG001';
-  const testStudentId = 'ARJU1001';
+// Helper to launch test server for live HTTP API tests
+function createTestServer() {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/admin', adminRoutes);
+  app.use('/api', attendanceRoutes);
+  app.use('/api', registrationRoutes);
 
-  try {
-    db.prepare('DELETE FROM students WHERE usn = ? OR student_id = ?').run(testUsn, testStudentId);
-    db.prepare(`
-      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Arjun Registered', ?, 'Computer Science and Engineering (CSE)', 2, null, '9876541001', 1)
-    `).run(testStudentId, testUsn);
-
-    // Mark manual attendance
-    const insertStmt = db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, 'MANUAL_ADMIN_OVERRIDE', 1, 'Marked by administrator', 'admin')
-    `);
-    const attRes = insertStmt.run(sessionId, testStudentId);
-    assert.ok(attRes.lastInsertRowid > 0, 'Attendance record should be created');
-
-    const record = db.prepare('SELECT * FROM attendance WHERE id = ?').get(attRes.lastInsertRowid);
-    assert.equal(record.session_id, sessionId);
-    assert.equal(record.student_id, testStudentId);
-    assert.equal(record.is_manual, 1);
-    assert.equal(record.token_used, 'MANUAL_ADMIN_OVERRIDE');
-    assert.equal(record.marked_by, 'admin');
-
-    // Confirm student remains registered
-    const student = db.prepare('SELECT is_registered FROM students WHERE student_id = ?').get(testStudentId);
-    assert.equal(student.is_registered, 1, 'Student must remain is_registered = 1');
-  } finally {
-    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-  }
-});
-
-test('Manual Attendance Scenario 2 & 4: Add student who does not yet exist (Case C) and verify is_registered = 0', () => {
-  const sessionRes = db.prepare(`
-    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
-    VALUES ('Scenario 2 Session', 'S2-101', 2, 'admin', 1, 0, 0)
-  `).run();
-  const sessionId = sessionRes.lastInsertRowid;
-  const testUsn = '1MJ24UNREG99';
-  const testName = 'Pooja Walkin';
-
-  try {
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-
-    // Case C Transaction: Create unregistered student + attendance
-    const createTx = db.transaction(() => {
-      const studentId = 'POOJ9999';
-      db.prepare(`
-        INSERT INTO students (name, usn, department, year, cycle, mobile, student_id, is_registered)
-        VALUES (?, ?, 'Information Science and Engineering (ISE)', 3, null, '', ?, 0)
-      `).run(testName, testUsn, studentId);
-
-      db.prepare(`
-        INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-        VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, 'Walk-in student manual entry', 'admin')
-      `).run(sessionId, studentId);
-
-      return studentId;
+  const server = http.createServer(app);
+  return new Promise((resolve) => {
+    server.listen(0, () => {
+      const port = server.address().port;
+      const baseUrl = `http://127.0.0.1:${port}`;
+      resolve({
+        server,
+        baseUrl,
+        close: () => new Promise((res) => server.close(res))
+      });
     });
+  });
+}
 
-    const generatedId = createTx();
-    assert.ok(generatedId, 'Generated student ID should be returned');
+// ==============================================================================
+// Category A: Unregistered Student Tests (Scenarios 1 - 7)
+// ==============================================================================
 
-    // Verify student is explicitly unregistered (is_registered = 0)
-    const student = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
-    assert.ok(student, 'Unregistered student must exist in DB');
-    assert.equal(student.is_registered, 0, 'Student must NOT be marked as registered (is_registered = 0)');
-    assert.equal(student.name, testName);
+test('A1-A7: Full Unregistered Student Lifecycle — New student creation, permanent registration, attendance & subsequent session availability', async () => {
+  const testServer = await createTestServer();
+  const token = createAdminToken('admin');
+  const authHeaders = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
 
-    // Verify attendance record
-    const attendance = db.prepare('SELECT * FROM attendance WHERE session_id = ? AND student_id = ?').get(sessionId, generatedId);
-    assert.ok(attendance, 'Attendance must be recorded');
-    assert.equal(attendance.is_manual, 1);
-    assert.equal(attendance.token_used, 'MANUAL_UNREGISTERED');
-    assert.equal(attendance.remarks, 'Walk-in student manual entry');
-  } finally {
-    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-  }
-});
-
-test('Manual Attendance Scenario 3: Mark attendance for existing student who is not registered (Case B)', () => {
-  const sessionRes = db.prepare(`
-    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
-    VALUES ('Scenario 3 Session', 'S3-101', 3, 'admin', 1, 0, 0)
-  `).run();
-  const sessionId = sessionRes.lastInsertRowid;
-  const testUsn = '1MJ24CASEB01';
-  const testStudentId = 'CASE9991';
-
-  try {
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    // Student already in database from previous walk-in
-    db.prepare(`
-      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Case B Walkin', ?, 'Mechanical Engineering', 2, null, '9876543210', 0)
-    `).run(testStudentId, testUsn);
-
-    // Existing student is identified; record attendance against existing student record
-    db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, 'Walk-in attendance in session 3', 'admin')
-    `).run(sessionId, testStudentId);
-
-    // Confirm only 1 student record exists
-    const count = db.prepare('SELECT COUNT(*) as count FROM students WHERE usn = ?').get(testUsn).count;
-    assert.equal(count, 1, 'Must NOT create a duplicate student record');
-
-    const student = db.prepare('SELECT is_registered FROM students WHERE usn = ?').get(testUsn);
-    assert.equal(student.is_registered, 0, 'Registration status remains 0');
-  } finally {
-    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-  }
-});
-
-test('Manual Attendance Scenario 5 & 6: Duplicate attendance prevention in same session', () => {
-  const sessionRes = db.prepare(`
-    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, static_qr_mode, pin_required)
-    VALUES ('Duplicate Test Session', 'DUP101', 1, 'admin', 1, 0, 0)
-  `).run();
-  const sessionId = sessionRes.lastInsertRowid;
-  const testUsn = '1MJ24DUP001';
-  const studentId = 'DUPP0001';
-
-  try {
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare(`
-      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Duplicate Tester', ?, 'Civil Engineering', 2, null, '9000000001', 0)
-    `).run(studentId, testUsn);
-
-    // 1st mark: Succeeds
-    db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1)
-    `).run(sessionId, studentId);
-
-    // 2nd mark: Must throw UNIQUE constraint error
-    assert.throws(() => {
-      db.prepare(`
-        INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual)
-        VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1)
-      `).run(sessionId, studentId);
-    }, /UNIQUE constraint failed/, 'Should reject duplicate attendance in the same session');
-  } finally {
-    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-  }
-});
-
-test('Manual Attendance Scenario 7: Same student in different sessions is allowed', () => {
+  // Create 2 test sessions
   const s1 = db.prepare(`
     INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
-    VALUES ('Session 1 Hour', 'HR1', 1, 'admin', 1)
-  `).run().lastInsertRowid;
-  const s2 = db.prepare(`
-    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
-    VALUES ('Session 2 Hour', 'HR2', 2, 'admin', 1)
+    VALUES ('Cloud Computing - Session 1', 'CS501', 1, 'admin', 1)
   `).run().lastInsertRowid;
 
-  const testUsn = '1MJ24DIFF01';
-  const studentId = 'DIFF0001';
+  const s2 = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
+    VALUES ('Cloud Computing - Session 2', 'CS501', 2, 'admin', 1)
+  `).run().lastInsertRowid;
+
+  const testUsn = '1MJ24NEW001';
+  const testName = 'Vikramaditya Sharma';
+  const testDept = 'Computer Science and Engineering (CSE)';
+  const testMobile = '9876543210';
 
   try {
     db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
-    db.prepare(`
-      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Diff Session Tester', ?, 'Aerospace Engineering', 3, null, '9000000002', 0)
-    `).run(studentId, testUsn);
 
-    // Mark session 1
-    const att1 = db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1)
-    `).run(s1, studentId);
-    assert.ok(att1.lastInsertRowid > 0);
+    // 1. Add completely new student and mark attendance via manual-unregistered
+    const res1 = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: testName,
+        usn: testUsn,
+        year: 3,
+        department: testDept,
+        mobile: testMobile,
+        remarks: 'New walk-in student'
+      })
+    });
 
-    // Mark session 2
-    const att2 = db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1)
-    `).run(s2, studentId);
-    assert.ok(att2.lastInsertRowid > 0);
+    assert.equal(res1.status, 201, 'Should return HTTP 201 Created');
+    const data1 = await res1.json();
+    assert.equal(data1.success, true);
+    assert.ok(data1.student, 'Should return created student object');
+    const createdId = data1.student.student_id;
+    assert.ok(createdId, 'Should generate a student ID');
 
-    const count = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE student_id = ?').get(studentId).count;
-    assert.equal(count, 2, 'Attendance should exist for both sessions');
+    // 2. Verify the student record exists in the database as a permanent record with is_registered = 1
+    const studentInDb = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
+    assert.ok(studentInDb, 'Student must exist in database');
+    assert.equal(studentInDb.student_id, createdId);
+    assert.equal(studentInDb.name, testName);
+    assert.equal(studentInDb.department, testDept);
+    assert.equal(studentInDb.is_registered, 1, 'Student must have is_registered = 1 (Permanent registered record)');
+
+    // 3. Verify attendance record exists and references the correct student
+    const attRecord = db.prepare('SELECT * FROM attendance WHERE session_id = ? AND student_id = ?').get(s1, createdId);
+    assert.ok(attRecord, 'Attendance must be recorded');
+    assert.equal(attRecord.session_id, s1);
+    assert.equal(attRecord.student_id, createdId);
+    assert.equal(attRecord.is_manual, 1);
+    assert.equal(attRecord.token_used, 'MANUAL_ADMIN_OVERRIDE');
+
+    // 4. Verify student appears in the registered-student attendance portal query
+    const rosterRes = await fetch(`${testServer.baseUrl}/api/admin/students?registration_status=registered`, {
+      headers: authHeaders
+    });
+    assert.equal(rosterRes.status, 200);
+    const rosterData = await rosterRes.json();
+    const foundInRoster = rosterData.students.find(s => s.usn === testUsn);
+    assert.ok(foundInRoster, 'Student must be returned in registered students query');
+    assert.equal(foundInRoster.is_registered, 1);
+
+    // 5. Searchable by name, USN, or Student ID
+    const searchRes = await fetch(`${testServer.baseUrl}/api/admin/students?search=${encodeURIComponent(testName)}`, {
+      headers: authHeaders
+    });
+    const searchData = await searchRes.json();
+    assert.ok(searchData.students.some(s => s.student_id === createdId), 'Student must be searchable by name');
+
+    // 6. Refresh simulation: Direct query from persistent DB confirms permanence
+    const freshDbCheck = db.prepare('SELECT * FROM students WHERE student_id = ?').get(createdId);
+    assert.ok(freshDbCheck, 'Student remains persisted after multiple queries');
+
+    // 7. Verify the student can now be selected and marked in a DIFFERENT attendance session (s2)
+    // using the normal registered student portal (manual-mark) without entering details again
+    const res2 = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-mark`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s2,
+        student_id: createdId,
+        remarks: 'Marked in next session via registered portal'
+      })
+    });
+
+    assert.equal(res2.status, 200, 'Should mark attendance in session 2');
+    const data2 = await res2.json();
+    assert.equal(data2.success, true);
+    assert.equal(data2.is_registered, true);
+
+    const attRecord2 = db.prepare('SELECT * FROM attendance WHERE session_id = ? AND student_id = ?').get(s2, createdId);
+    assert.ok(attRecord2, 'Attendance for session 2 must be recorded');
   } finally {
-    db.prepare('DELETE FROM attendance WHERE student_id = ?').run(studentId);
+    db.prepare('DELETE FROM attendance WHERE session_id IN (?, ?)').run(s1, s2);
     db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
     db.prepare('DELETE FROM sessions WHERE id IN (?, ?)').run(s1, s2);
+    await testServer.close();
   }
 });
 
-test('Manual Attendance Scenario 8: Unauthorized requests are rejected by adminAuth', () => {
-  const adminAuth = require('../middleware/adminAuth');
+// ==============================================================================
+// Category B: Existing Student Tests (Scenarios 8 - 13)
+// ==============================================================================
 
-  // Test request without token
-  let statusSet = null;
-  let jsonSent = null;
-  const reqNoToken = { headers: {}, query: {} };
-  const resNoToken = {
-    status: (s) => {
-      statusSet = s;
-      return {
-        json: (data) => { jsonSent = data; }
-      };
-    }
+test('B8-B13: Existing Student Workflows — Reuse, eligibility upgrade (0 -> 1), no credentials, already registered', async () => {
+  const testServer = await createTestServer();
+  const token = createAdminToken('admin');
+  const authHeaders = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
   };
-  adminAuth(reqNoToken, resNoToken, () => {
-    assert.fail('Should not call next() without token');
-  });
-  assert.equal(statusSet, 401, 'Should return HTTP 401 Unauthorized');
-  assert.ok(jsonSent.error.includes('missing'), 'Error message should indicate missing token');
 
-  // Test request with invalid token
-  statusSet = null;
-  jsonSent = null;
-  const reqBadToken = { headers: { authorization: 'Bearer invalid_signature_token' }, query: {} };
-  adminAuth(reqBadToken, resNoToken, () => {
-    assert.fail('Should not call next() with bad token');
-  });
-  assert.equal(statusSet, 401, 'Should return HTTP 401 for invalid token');
-
-  // Test request with valid token
-  let nextCalled = false;
-  const validToken = createAdminToken('admin');
-  const reqValid = { headers: { authorization: `Bearer ${validToken}` }, query: {} };
-  adminAuth(reqValid, resNoToken, () => {
-    nextCalled = true;
-  });
-  assert.ok(nextCalled, 'Should call next() with valid admin token');
-  assert.equal(reqValid.admin.username, 'admin');
-});
-
-test('Manual Attendance Scenario 9 & 10: Attendance persistence, live feed, reports, and exports', () => {
-  const XLSX = require('xlsx');
-  const sessionRes = db.prepare(`
+  const sessionId = db.prepare(`
     INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
-    VALUES ('Reporting Test Session', 'RPT101', 1, 'admin', 1)
-  `).run();
-  const sessionId = sessionRes.lastInsertRowid;
+    VALUES ('Existing Student Session', 'EX101', 1, 'admin', 1)
+  `).run().lastInsertRowid;
 
-  const regUsn = '1MJ24REGRPT';
-  const regId = 'REGR1111';
-  const unregUsn = '1MJ24UNREGRPT';
-  const unregId = 'UNRE2222';
+  const unregUsn = '1MJ24PREV001';
+  const unregStudentId = 'PREV1234';
+  const regUsn = '1MJ24ALREG01';
+  const regStudentId = 'ALRE5678';
 
   try {
-    db.prepare('DELETE FROM students WHERE usn IN (?, ?)').run(regUsn, unregUsn);
+    db.prepare('DELETE FROM students WHERE usn IN (?, ?)').run(unregUsn, regUsn);
 
-    // 1. Registered student
+    // Pre-insert student with is_registered = 0 (Case B)
     db.prepare(`
       INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Alice Registered', ?, 'Computer Science and Engineering (CSE)', 3, null, '9876500001', 1)
-    `).run(regId, regUsn);
+      VALUES (?, 'Preexisting Walkin', ?, 'Mechanical Engineering', 2, null, '9876540001', 0)
+    `).run(unregStudentId, unregUsn);
 
-    // 2. Unregistered walk-in student
+    // Pre-insert student with is_registered = 1 (Case C)
     db.prepare(`
       INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Bob Walkin', ?, 'Electronics and Communication Engineering (ECE)', 2, null, '9876500002', 0)
-    `).run(unregId, unregUsn);
+      VALUES (?, 'Already Registered', ?, 'Civil Engineering', 3, null, '9876540002', 1)
+    `).run(regStudentId, regUsn);
 
-    // Mark attendance for both
-    db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, 'MANUAL_ADMIN_OVERRIDE', 1, 'Registered override', 'admin')
-    `).run(sessionId, regId);
+    // 8. Add attendance for student who exists with is_registered = 0
+    const resB = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: sessionId,
+        name: 'Preexisting Walkin',
+        usn: unregUsn,
+        year: 2,
+        department: 'Mechanical Engineering',
+        remarks: 'Activating existing student'
+      })
+    });
 
-    db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, 'Unregistered walk-in', 'admin')
-    `).run(sessionId, unregId);
+    assert.equal(resB.status, 200);
+    const dataB = await resB.json();
+    assert.equal(dataB.success, true);
+    assert.equal(dataB.category, 'unregistered_upgraded');
 
-    // Verify live feed query returns both with accurate is_registered and is_manual
-    const records = db.prepare(`
-      SELECT 
-        a.id, a.marked_at, a.geo_verified, a.is_manual, a.remarks, a.token_used,
-        s.student_id, s.name, s.usn, s.department, s.year, s.cycle, s.mobile, s.is_registered
-      FROM attendance a
-      JOIN students s ON a.student_id = s.student_id
-      WHERE a.session_id = ?
-      ORDER BY a.id ASC
-    `).all(sessionId);
+    // 9. Verify existing record is reused
+    const studentCount = db.prepare('SELECT COUNT(*) as count FROM students WHERE usn = ?').get(unregUsn).count;
+    assert.equal(studentCount, 1, 'Must NOT create duplicate student');
 
-    assert.equal(records.length, 2, 'Total attendance records must be 2');
-    const regRecord = records.find(r => r.student_id === regId);
-    const unregRecord = records.find(r => r.student_id === unregId);
+    // 10. Verify student ID was preserved
+    const upgradedStudent = db.prepare('SELECT * FROM students WHERE usn = ?').get(unregUsn);
+    assert.equal(upgradedStudent.student_id, unregStudentId);
 
-    assert.equal(regRecord.is_registered, 1, 'Registered student is_registered must be 1');
-    assert.equal(unregRecord.is_registered, 0, 'Unregistered student is_registered must be 0');
-    assert.equal(unregRecord.is_manual, 1);
-    assert.equal(unregRecord.token_used, 'MANUAL_UNREGISTERED');
+    // 11. Verify attendance eligibility is upgraded to 1
+    assert.equal(upgradedStudent.is_registered, 1, 'Student must be upgraded to is_registered = 1');
 
-    // Verify CSV Generation
-    const headers = ['Sl No', 'Student ID', 'Student Name', 'USN / Admission No', 'Department', 'Year', 'Cycle', 'Mobile', 'Registration Status', 'Entry Type', 'Remarks', 'Marked At', 'Geo Verified'];
-    const csvRows = records.map((r, index) => [
-      index + 1,
-      `"${r.student_id}"`,
-      `"${r.name}"`,
-      `"${r.usn}"`,
-      `"${r.department}"`,
-      r.year,
-      `"${r.cycle || 'N/A'}"`,
-      `"${r.mobile || 'N/A'}"`,
-      `"${r.is_registered === 0 ? 'Unregistered / Walk-in' : 'Registered'}"`,
-      `"${r.is_manual ? 'Manual Entry' : 'QR Scan'}"`,
-      `"${r.remarks || ''}"`,
-      `"${r.marked_at}"`,
-      r.geo_verified ? 'Yes' : 'No'
-    ]);
-    const csvContent = [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+    // 12. Verify no unintended login credentials are created
+    const studentCols = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+    assert.ok(!studentCols.includes('password'), 'Students table must NOT contain password');
+    assert.ok(!studentCols.includes('password_hash'), 'Students table must NOT contain password_hash');
+    const adminMatch = db.prepare('SELECT id FROM admins WHERE username = ?').get(unregStudentId);
+    assert.equal(adminMatch, undefined, 'No admin account should be generated for student');
 
-    assert.ok(csvContent.includes('Unregistered / Walk-in'), 'CSV must contain Unregistered / Walk-in status');
-    assert.ok(csvContent.includes('Registered'), 'CSV must contain Registered status');
-    assert.ok(csvContent.includes('Manual Entry'), 'CSV must contain Manual Entry type');
+    // 13. Test workflow for already registered student (Case C)
+    const resC = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: sessionId,
+        name: 'Already Registered',
+        usn: regUsn,
+        year: 3,
+        department: 'Civil Engineering',
+        remarks: 'Existing registered mark'
+      })
+    });
 
-    // Verify XLSX Generation
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...csvRows]);
-    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    assert.ok(Buffer.isBuffer(buffer), 'XLSX must be a valid buffer');
-    assert.ok(buffer.length > 1000, 'XLSX buffer must contain data');
+    assert.equal(resC.status, 200);
+    const dataC = await resC.json();
+    assert.equal(dataC.success, true);
+    assert.equal(dataC.category, 'registered_existing');
+
+    const regCount = db.prepare('SELECT COUNT(*) as count FROM students WHERE usn = ?').get(regUsn).count;
+    assert.equal(regCount, 1, 'Must NOT duplicate already registered student');
   } finally {
     db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
-    db.prepare('DELETE FROM students WHERE usn IN (?, ?)').run(regUsn, unregUsn);
+    db.prepare('DELETE FROM students WHERE usn IN (?, ?)').run(unregUsn, regUsn);
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    await testServer.close();
+  }
+});
+
+// ==============================================================================
+// Category C: Duplicate and Validation Tests (Scenarios 14 - 22)
+// ==============================================================================
+
+test('C14-C22: Duplicate Prevention, Conflicting Details, and Strict Validation', async () => {
+  const testServer = await createTestServer();
+  const token = createAdminToken('admin');
+  const authHeaders = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+
+  const s1 = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
+    VALUES ('Validation Session 1', 'VAL101', 1, 'admin', 1)
+  `).run().lastInsertRowid;
+
+  const s2 = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
+    VALUES ('Validation Session 2', 'VAL102', 2, 'admin', 1)
+  `).run().lastInsertRowid;
+
+  const testUsn = '1MJ24VAL001';
+
+  try {
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+
+    // Initial student creation
+    const resInit = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: 'Rohit Verma',
+        usn: testUsn,
+        year: 2,
+        department: 'Computer Science and Engineering (CSE)'
+      })
+    });
+    assert.equal(resInit.status, 201);
+
+    // 14. Attempt to add the same student again in the same session -> 409 already marked
+    const resDupSession = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: 'Rohit Verma',
+        usn: testUsn,
+        year: 2,
+        department: 'Computer Science and Engineering (CSE)'
+      })
+    });
+    assert.equal(resDupSession.status, 409, 'Must reject duplicate attendance in same session');
+    const dataDup = await resDupSession.json();
+    assert.ok(dataDup.error.includes('already recorded') || dataDup.already_marked);
+
+    // 15. Attempt to add with conflicting student details (different name for same USN)
+    const resConflict = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s2,
+        name: 'Completely Different Person',
+        usn: testUsn,
+        year: 2,
+        department: 'Computer Science and Engineering (CSE)'
+      })
+    });
+    assert.equal(resConflict.status, 409, 'Must reject conflicting student details for same USN');
+    const dataConflict = await resConflict.json();
+    assert.ok(dataConflict.conflict === true || dataConflict.error.includes('Conflict'));
+
+    // 16 & 17. Record attendance for same student in different session (s2) with matching details -> Succeeds
+    const resDiffSession = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s2,
+        name: 'Rohit Verma',
+        usn: testUsn,
+        year: 2,
+        department: 'Computer Science and Engineering (CSE)'
+      })
+    });
+    assert.equal(resDiffSession.status, 200, 'Same student in different session must succeed');
+
+    // 18. Missing required fields: Name missing
+    const resNoName = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: '',
+        usn: '1MJ24NONAME',
+        year: 2,
+        department: 'CSE'
+      })
+    });
+    assert.equal(resNoName.status, 400);
+
+    // 19. Missing USN
+    const resNoUsn = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: 'No Usn Student',
+        usn: '',
+        year: 2,
+        department: 'CSE'
+      })
+    });
+    assert.equal(resNoUsn.status, 400);
+
+    // 20. Invalid year (year = 5)
+    const resBadYear = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: 'Bad Year Student',
+        usn: '1MJ24BADYR',
+        year: 5,
+        department: 'CSE'
+      })
+    });
+    assert.equal(resBadYear.status, 400);
+
+    // Year 1 without cycle
+    const resYr1NoCycle = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: 'First Year Student',
+        usn: '1MJ24Y1NOCYC',
+        year: 1,
+        cycle: ''
+      })
+    });
+    assert.equal(resYr1NoCycle.status, 400);
+
+    // 21 & 22. Whitespace and Case Normalization
+    const resNorm = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: s1,
+        name: '  Ananya Patel  ',
+        usn: '  1mj24norm99  ',
+        year: 2,
+        department: 'Information Science and Engineering (ISE)'
+      })
+    });
+    assert.equal(resNorm.status, 201);
+    const normStudent = db.prepare('SELECT * FROM students WHERE usn = ?').get('1MJ24NORM99');
+    assert.ok(normStudent, 'USN must be trimmed and capitalized');
+    assert.equal(normStudent.name, 'Ananya Patel', 'Name must be trimmed');
+    db.prepare('DELETE FROM students WHERE usn = ?').run('1MJ24NORM99');
+  } finally {
+    db.prepare('DELETE FROM attendance WHERE session_id IN (?, ?)').run(s1, s2);
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare('DELETE FROM sessions WHERE id IN (?, ?)').run(s1, s2);
+    await testServer.close();
+  }
+});
+
+// ==============================================================================
+// Category D: Failure and Concurrency Tests (Scenarios 23 - 30)
+// ==============================================================================
+
+test('D23-D30: Atomic Transactions, Concurrency, and Rollback Integrity', async () => {
+  const sessionId = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active)
+    VALUES ('Transaction Test Session', 'TX101', 1, 'admin', 1)
+  `).run().lastInsertRowid;
+
+  const testUsn = '1MJ24TX001';
+  const testStudentId = 'TXTEST01';
+
+  try {
+    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+
+    // 26. Verify transaction rollbacks completely if attendance insertion fails
+    assert.throws(() => {
+      const rollbackTx = db.transaction(() => {
+        // Step 1: Create student
+        db.prepare(`
+          INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
+          VALUES (?, 'Rollback Tester', ?, 'Computer Science and Engineering (CSE)', 2, null, '9876543210', 1)
+        `).run(testStudentId, testUsn);
+
+        // Step 2: Intentionally violate foreign key constraint or trigger error
+        // Invalid session_id 999999999 with foreign_keys = ON will throw
+        db.prepare(`
+          INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual)
+          VALUES (999999999, ?, 1, 'MANUAL_TEST', 1)
+        `).run(testStudentId);
+      });
+
+      rollbackTx();
+    }, /FOREIGN KEY constraint failed/);
+
+    // Confirm that Step 1 was ROLLED BACK and no orphan student was created
+    const orphanStudent = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
+    assert.equal(orphanStudent, undefined, 'Student insertion must be rolled back on attendance failure');
+
+    // 28-30. Concurrent insertion test for same student
+    const testServer = await createTestServer();
+    const token = createAdminToken('admin');
+    const authHeaders = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+
+    const concurrentUsn = '1MJ24CONCURR';
+    db.prepare('DELETE FROM students WHERE usn = ?').run(concurrentUsn);
+
+    // Fire 2 concurrent requests for the exact same student
+    const [p1, p2] = await Promise.all([
+      fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          session_id: sessionId,
+          name: 'Concurrent Student',
+          usn: concurrentUsn,
+          year: 2,
+          department: 'Computer Science and Engineering (CSE)'
+        })
+      }),
+      fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          session_id: sessionId,
+          name: 'Concurrent Student',
+          usn: concurrentUsn,
+          year: 2,
+          department: 'Computer Science and Engineering (CSE)'
+        })
+      })
+    ]);
+
+    const statuses = [p1.status, p2.status];
+    // Exactly one must succeed (201 or 200), and the other must be handled (409 conflict)
+    assert.ok(statuses.includes(201), 'At least one request must create the student (201)');
+    assert.ok(statuses.includes(409) || statuses.includes(200), 'Second request must be handled without 500 error');
+
+    // Verify only ONE student record exists in the DB
+    const studentCount = db.prepare('SELECT COUNT(*) as count FROM students WHERE usn = ?').get(concurrentUsn).count;
+    assert.equal(studentCount, 1, 'Only ONE canonical student record must be created under concurrency');
+
+    // Verify only ONE attendance record exists
+    const attCount = db.prepare('SELECT COUNT(*) as count FROM attendance WHERE session_id = ?').get(sessionId).count;
+    assert.equal(attCount, 1, 'Only ONE attendance record must be created under concurrency');
+
+    db.prepare('DELETE FROM students WHERE usn = ?').run(concurrentUsn);
+    await testServer.close();
+  } finally {
+    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
+    db.prepare('DELETE FROM students WHERE usn IN (?, ?)').run(testUsn, '1MJ24CONCURR');
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   }
 });
 
-test('Manual Attendance Scenario 11: Unregistered student can subsequently register via QR registration', () => {
-  const testUsn = '1MJ24WALKTOREG';
-  const initialStudentId = 'WALK0001';
+// ==============================================================================
+// Category E: Authorization Tests (Scenarios 31 - 35)
+// ==============================================================================
+
+test('E31-E35: Backend Authorization Enforcement on Manual Attendance Routes', async () => {
+  const testServer = await createTestServer();
+
+  // 34. Unauthenticated request without token -> 401
+  const resNoAuth = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: 1, name: 'Hacker', usn: '1MJ24HACK01', year: 2, department: 'CSE' })
+  });
+  assert.equal(resNoAuth.status, 401, 'Unauthenticated request must return 401');
+
+  // 33. Invalid / forged token -> 401
+  const resBadAuth = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer forged_fake_token_123',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ session_id: 1, name: 'Hacker', usn: '1MJ24HACK01', year: 2, department: 'CSE' })
+  });
+  assert.equal(resBadAuth.status, 401, 'Invalid token must return 401');
+
+  // 31. Valid admin token -> Authorized (404 due to non-existent session, NOT 401)
+  const validToken = createAdminToken('admin');
+  const resValid = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-unregistered`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${validToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ session_id: 99999999, name: 'Test', usn: '1MJ24AUTH', year: 2, department: 'CSE' })
+  });
+  assert.notEqual(resValid.status, 401, 'Valid admin token must NOT be rejected with 401');
+  assert.equal(resValid.status, 404, 'Session 99999999 not found -> 404');
+
+  await testServer.close();
+});
+
+// ==============================================================================
+// Category F: Regression Tests (Scenarios 36 - 42)
+// ==============================================================================
+
+test('F36-F42: System Regressions — Registered manual, QR scan, stats, live feed, exports', async () => {
+  const testServer = await createTestServer();
+  const token = createAdminToken('admin');
+  const authHeaders = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+
+  const sessionRes = db.prepare(`
+    INSERT INTO sessions (subject_name, subject_code, hour_number, started_by, is_active, pin_required)
+    VALUES ('Regression Session', 'REG999', 1, 'admin', 1, 0)
+  `).run();
+  const sessionId = sessionRes.lastInsertRowid;
+
+  const regUsn = '1MJ24REGR01';
+  const regStudentId = 'REGR9901';
 
   try {
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare('DELETE FROM students WHERE usn = ?').run(regUsn);
 
-    // Initially added manually by admin as unregistered
+    // Create student
     db.prepare(`
       INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
-      VALUES (?, 'Kavya Initial', ?, 'Basic Sciences (Physics Cycle)', 1, 'Physics Cycle', '', 0)
-    `).run(initialStudentId, testUsn);
+      VALUES (?, 'Regression Student', ?, 'Computer Science and Engineering (CSE)', 2, null, '9876549901', 1)
+    `).run(regStudentId, regUsn);
 
-    const initial = db.prepare('SELECT is_registered FROM students WHERE usn = ?').get(testUsn);
-    assert.equal(initial.is_registered, 0, 'Initial status must be 0');
+    // 36. Verify normal registered-student manual attendance
+    const resMark = await fetch(`${testServer.baseUrl}/api/admin/attendance/manual-mark`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        session_id: sessionId,
+        student_id: regStudentId,
+        remarks: 'Normal manual registered attendance'
+      })
+    });
+    assert.equal(resMark.status, 200);
 
-    // Student later scans official registration QR code and submits registration form
-    const existing = db.prepare('SELECT student_id, name, is_registered FROM students WHERE usn = ?').get(testUsn);
-    assert.equal(existing.is_registered, 0);
+    // 39. Verify live feed endpoint returns recorded student with correct fields
+    const resLive = await fetch(`${testServer.baseUrl}/api/attendance/live/${sessionId}`);
+    assert.equal(resLive.status, 200);
+    const liveData = await resLive.json();
+    assert.equal(liveData.records.length, 1);
+    assert.equal(liveData.records[0].student_id, regStudentId);
+    assert.equal(liveData.records[0].is_registered, 1);
+    assert.equal(liveData.records[0].is_manual, 1);
 
-    // System upgrades existing record to is_registered = 1
+    // 40. Verify student search by partial name
+    const resSearch = await fetch(`${testServer.baseUrl}/api/admin/students?search=Regression`, {
+      headers: authHeaders
+    });
+    const searchData = await resSearch.json();
+    assert.ok(searchData.students.some(s => s.student_id === regStudentId));
+
+    // 41. Verify CSV Export endpoint
+    const resCsv = await fetch(`${testServer.baseUrl}/api/attendance/export/${sessionId}`, {
+      headers: authHeaders
+    });
+    assert.equal(resCsv.status, 200);
+    const csvText = await resCsv.text();
+    assert.ok(csvText.includes('Regression Student'));
+    assert.ok(csvText.includes('Registered'));
+    assert.ok(csvText.includes('Manual Entry'));
+
+    // 41b. Verify XLSX Export endpoint
+    const resXlsx = await fetch(`${testServer.baseUrl}/api/attendance/export-xlsx/${sessionId}`, {
+      headers: authHeaders
+    });
+    assert.equal(resXlsx.status, 200);
+    const xlsxBuffer = await resXlsx.arrayBuffer();
+    assert.ok(xlsxBuffer.byteLength > 1000);
+
+    // 37. QR scan endpoint regression: create 2nd student and test mark
+    const qrUsn = '1MJ24QR001';
+    const qrStudentId = 'QRST0001';
+    db.prepare('DELETE FROM students WHERE usn = ?').run(qrUsn);
     db.prepare(`
-      UPDATE students
-      SET name = ?, department = ?, year = ?, cycle = ?, mobile = ?, is_registered = 1
-      WHERE student_id = ?
-    `).run('Kavya Formal', 'Basic Sciences (Chemistry Cycle)', 1, 'Chemistry Cycle', '9876543299', existing.student_id);
+      INSERT INTO students (student_id, name, usn, department, year, cycle, mobile, is_registered)
+      VALUES (?, 'QR Student', ?, 'Computer Science and Engineering (CSE)', 2, null, '9876540003', 1)
+    `).run(qrStudentId, qrUsn);
 
-    const upgraded = db.prepare('SELECT * FROM students WHERE usn = ?').get(testUsn);
-    assert.equal(upgraded.is_registered, 1, 'Student must be upgraded to is_registered = 1');
-    assert.equal(upgraded.name, 'Kavya Formal');
-    assert.equal(upgraded.mobile, '9876543299');
-    assert.equal(upgraded.student_id, initialStudentId, 'Student ID must be preserved');
+    const tokenObj = generateTokenForSession(sessionId, false);
+    const resQr = await fetch(`${testServer.baseUrl}/api/attendance/mark`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: tokenObj.token,
+        student_id: qrStudentId,
+        unique_pin: tokenObj.unique_pin
+      })
+    });
+    assert.equal(resQr.status, 200, 'QR mark endpoint should succeed');
+    const qrData = await resQr.json();
+    assert.equal(qrData.success, true);
+
+    db.prepare('DELETE FROM students WHERE usn = ?').run(qrUsn);
   } finally {
-    db.prepare('DELETE FROM students WHERE usn = ?').run(testUsn);
+    db.prepare('DELETE FROM qr_tokens WHERE session_id = ?').run(sessionId);
+    db.prepare('DELETE FROM attendance WHERE session_id = ?').run(sessionId);
+    db.prepare('DELETE FROM students WHERE usn = ?').run(regUsn);
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    await testServer.close();
   }
 });

@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const adminAuth = require('../middleware/adminAuth');
+const { adminAuth, requirePermission, parsePermissions } = require('../middleware/adminAuth');
 const { generateTokenForSession } = require('../cron/tokenRotator');
 
 // All admin routes require adminAuth
 router.use(adminAuth);
 
 // 1. Dashboard Overview Stats
-router.get('/stats', (req, res) => {
+router.get('/stats', requirePermission('view_dashboard'), (req, res) => {
   const totalStudents = db.prepare('SELECT COUNT(*) as count FROM students').get().count;
   const activeSessions = db.prepare('SELECT COUNT(*) as count FROM sessions WHERE is_active = 1').get().count;
   const totalSessions = db.prepare('SELECT COUNT(*) as count FROM sessions').get().count;
@@ -38,7 +38,7 @@ router.get('/stats', (req, res) => {
 
 // 2. Start a New Class/Subject Session (1 to 5 hours)
 // 2. Start a New Class/Subject Session (1 to 5 hours)
-router.post('/sessions/start', (req, res) => {
+router.post('/sessions/start', requirePermission('manage_live_attendance'), (req, res) => {
   const { 
     subject_name, 
     subject_code, 
@@ -127,7 +127,7 @@ router.post('/sessions/start', (req, res) => {
 });
 
 // 3. Stop an Active Session
-router.post('/sessions/:id/stop', (req, res) => {
+router.post('/sessions/:id/stop', requirePermission('manage_live_attendance'), (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
   const updateStmt = db.prepare(`
     UPDATE sessions 
@@ -144,7 +144,7 @@ router.post('/sessions/:id/stop', (req, res) => {
 });
 
 // 4. List All Sessions with Attendance Counts
-router.get('/sessions', (req, res) => {
+router.get('/sessions', requirePermission('view_live_attendance'), (req, res) => {
   const sessions = db.prepare(`
     SELECT 
       s.*, 
@@ -171,7 +171,7 @@ router.get('/sessions/active', (req, res) => {
 });
 
 // 6. Update Geo-fence for a Session (Toggle on/off, change 4-corner polygon, coords/radius, or apply saved location)
-router.patch('/sessions/:id/geofence', (req, res) => {
+router.patch('/sessions/:id/geofence', requirePermission('manage_live_attendance'), (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
   const { enabled, lat, lng, radius, corners, saved_location_id } = req.body;
 
@@ -229,7 +229,7 @@ router.patch('/sessions/:id/geofence', (req, res) => {
 });
 
 // 6b. On-the-fly Toggle 1: Enable / Disable Geofence toggle
-router.patch('/sessions/:id/toggle-geofence', (req, res) => {
+router.patch('/sessions/:id/toggle-geofence', requirePermission('manage_live_attendance'), (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
@@ -249,7 +249,7 @@ router.patch('/sessions/:id/toggle-geofence', (req, res) => {
 });
 
 // 6c. On-the-fly Toggle 2: Enable / Disable Unique PIN toggle
-router.patch('/sessions/:id/toggle-pin', (req, res) => {
+router.patch('/sessions/:id/toggle-pin', requirePermission('manage_live_attendance'), (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
@@ -270,7 +270,7 @@ router.patch('/sessions/:id/toggle-pin', (req, res) => {
 });
 
 // 6d. On-the-fly Toggle 3: Enable / Disable Static QR Mode (freezes QR rotation on display screen)
-router.patch('/sessions/:id/toggle-static-qr', (req, res) => {
+router.patch('/sessions/:id/toggle-static-qr', requirePermission('manage_attendance_qr'), (req, res) => {
   const sessionId = parseInt(req.params.id, 10);
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   if (!session) {
@@ -351,7 +351,7 @@ function computeStudentIDForWalkin(name, mobile, usn) {
 
 // 7. Manual Attendance Override / Error Correction (Registered students or by Student ID / USN / Name)
 // Add attendance manually for a student who had a device/scan issue
-router.post('/attendance/manual-mark', (req, res) => {
+router.post('/attendance/manual-mark', requirePermission('manage_live_attendance'), (req, res) => {
   const { session_id, student_id, usn, remarks, force, update_existing } = req.body;
 
   const numSessionId = parseInt(session_id, 10);
@@ -361,12 +361,32 @@ router.post('/attendance/manual-mark', (req, res) => {
   }
 
   const lookupUpper = lookupKey.toUpperCase();
-  const student = db.prepare(`
+  let student = db.prepare(`
     SELECT * FROM students 
     WHERE UPPER(TRIM(student_id)) = ? 
        OR UPPER(TRIM(usn)) = ? 
        OR UPPER(TRIM(name)) = ?
   `).get(lookupUpper, lookupUpper, lookupUpper);
+
+  if (!student) {
+    // Try partial/contains search if exact match was not found
+    const matches = db.prepare(`
+      SELECT * FROM students 
+      WHERE UPPER(name) LIKE ? 
+         OR UPPER(usn) LIKE ? 
+         OR UPPER(student_id) LIKE ?
+      LIMIT 10
+    `).all(`%${lookupUpper}%`, `%${lookupUpper}%`, `%${lookupUpper}%`);
+
+    if (matches.length === 1) {
+      student = matches[0];
+    } else if (matches.length > 1) {
+      return res.status(400).json({ 
+        error: `Multiple students matched "${lookupKey}". Please specify exact Student ID or USN: ${matches.map(m => `${m.name} (${m.student_id})`).join(', ')}`,
+        multiple_matches: matches
+      });
+    }
+  }
 
   if (!student) {
     return res.status(404).json({ 
@@ -383,7 +403,7 @@ router.post('/attendance/manual-mark', (req, res) => {
 
   const adminName = (req.admin && req.admin.username) ? req.admin.username : 'admin';
   const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual entry by administrator';
-  const tokenUsed = student.is_registered === 0 ? 'MANUAL_UNREGISTERED' : 'MANUAL_ADMIN_OVERRIDE';
+  const tokenUsed = 'MANUAL_ADMIN_OVERRIDE';
 
   // Check if attendance is already recorded for this student in this session
   const existingAttendance = db.prepare('SELECT id, marked_at FROM attendance WHERE session_id = ? AND student_id = ?').get(numSessionId, student.student_id);
@@ -401,7 +421,7 @@ router.post('/attendance/manual-mark', (req, res) => {
         updated: true,
         message: `Updated attendance record for ${student.name} (${student.student_id})`,
         student,
-        is_registered: student.is_registered !== 0
+        is_registered: true
       });
     }
 
@@ -415,17 +435,27 @@ router.post('/attendance/manual-mark', (req, res) => {
   }
 
   try {
-    const insertStmt = db.prepare(`
-      INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, ?, 1, ?, ?)
-    `);
-    insertStmt.run(numSessionId, student.student_id, tokenUsed, customRemarks, adminName);
+    const markTx = db.transaction(() => {
+      // Ensure student is recognized as permanently registered
+      if (student.is_registered === 0) {
+        db.prepare('UPDATE students SET is_registered = 1 WHERE id = ?').run(student.id);
+        student.is_registered = 1;
+      }
+
+      const insertStmt = db.prepare(`
+        INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
+        VALUES (?, ?, 1, ?, 1, ?, ?)
+      `);
+      insertStmt.run(numSessionId, student.student_id, tokenUsed, customRemarks, adminName);
+    });
+
+    markTx();
 
     return res.json({
       success: true,
       message: `Manually marked attendance for ${student.name} (${student.student_id})`,
-      student,
-      is_registered: student.is_registered !== 0
+      student: { ...student, is_registered: 1 },
+      is_registered: true
     });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -435,12 +465,14 @@ router.post('/attendance/manual-mark', (req, res) => {
         student
       });
     }
-    return res.status(500).json({ error: 'Database error' });
+    return res.status(500).json({ error: 'Database error: ' + err.message });
   }
 });
 
 // 7b. Manual Attendance for Unregistered / Walk-in Students
-router.post('/attendance/manual-unregistered', (req, res) => {
+// Creates a permanent student record if student does not exist, or reuses existing student,
+// and records attendance for the session in an atomic database transaction.
+router.post('/attendance/manual-unregistered', requirePermission('manage_live_attendance'), (req, res) => {
   const { session_id, name, usn, department, year, cycle, mobile, remarks, force, update_existing } = req.body;
 
   const numSessionId = parseInt(session_id, 10);
@@ -494,9 +526,9 @@ router.post('/attendance/manual-unregistered', (req, res) => {
   }
 
   const adminName = (req.admin && req.admin.username) ? req.admin.username : 'admin';
-  const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual unregistered walk-in entry';
+  const customRemarks = (remarks && remarks.trim()) ? remarks.trim() : 'Manual student registration and attendance';
 
-  // Check if student already exists in database (Case A & Case B)
+  // Check if student already exists in database (Case B, C, D)
   const existingStudent = db.prepare(`
     SELECT * FROM students 
     WHERE UPPER(TRIM(usn)) = ? 
@@ -504,7 +536,25 @@ router.post('/attendance/manual-unregistered', (req, res) => {
   `).get(cleanUsn, cleanUsn);
 
   if (existingStudent) {
-    // Check if attendance already marked in this session
+    // Case D: Check for conflicting student details
+    const existingNameNorm = existingStudent.name.trim().toLowerCase().replace(/\s+/g, ' ');
+    const submittedNameNorm = trimmedName.toLowerCase().replace(/\s+/g, ' ');
+
+    if (existingNameNorm !== submittedNameNorm) {
+      return res.status(409).json({
+        error: `Conflict detected: Student with USN/ID "${cleanUsn}" already exists as "${existingStudent.name}" (${existingStudent.department}, Year ${existingStudent.year}). Please verify the details or use the Registered Student portal.`,
+        conflict: true,
+        existing_student: {
+          student_id: existingStudent.student_id,
+          name: existingStudent.name,
+          usn: existingStudent.usn,
+          department: existingStudent.department,
+          year: existingStudent.year
+        }
+      });
+    }
+
+    // Case E: Check if attendance already marked in this session
     const existingAttendance = db.prepare('SELECT id, marked_at FROM attendance WHERE session_id = ? AND student_id = ?').get(numSessionId, existingStudent.student_id);
     if (existingAttendance) {
       if (force === true || update_existing === true) {
@@ -530,25 +580,38 @@ router.post('/attendance/manual-unregistered', (req, res) => {
       });
     }
 
-    // Determine category:
-    // Case A: Student is registered (is_registered = 1)
-    // Case B: Student exists but unregistered (is_registered = 0)
-    const isRegistered = existingStudent.is_registered === 1 || existingStudent.is_registered === null;
-    const tokenUsed = isRegistered ? 'MANUAL_ADMIN_OVERRIDE' : 'MANUAL_UNREGISTERED';
+    // Case B & Case C: Safely reuse existing student record.
+    // Upgrade is_registered to 1 if it was 0, and record attendance in a single transaction.
+    const reuseAndMarkTx = db.transaction(() => {
+      if (existingStudent.is_registered === 0) {
+        db.prepare(`
+          UPDATE students 
+          SET is_registered = 1,
+              department = COALESCE(?, department),
+              year = COALESCE(?, year),
+              cycle = COALESCE(?, cycle),
+              mobile = CASE WHEN (mobile IS NULL OR mobile = '') THEN ? ELSE mobile END
+          WHERE id = ?
+        `).run(finalDepartment, numYear, studentCycle, cleanMobile, existingStudent.id);
+      }
 
-    try {
       db.prepare(`
         INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-        VALUES (?, ?, 1, ?, 1, ?, ?)
-      `).run(numSessionId, existingStudent.student_id, tokenUsed, customRemarks, adminName);
+        VALUES (?, ?, 1, 'MANUAL_ADMIN_OVERRIDE', 1, ?, ?)
+      `).run(numSessionId, existingStudent.student_id, customRemarks, adminName);
 
+      return db.prepare('SELECT * FROM students WHERE id = ?').get(existingStudent.id);
+    });
+
+    try {
+      const updatedStudent = reuseAndMarkTx();
       return res.status(200).json({
         success: true,
-        category: isRegistered ? 'registered_existing' : 'unregistered_existing',
-        message: isRegistered
-          ? `Recorded attendance against existing registered record for ${existingStudent.name} (${existingStudent.student_id})`
-          : `Recorded attendance against existing walk-in record for ${existingStudent.name} (${existingStudent.student_id})`,
-        student: existingStudent
+        category: existingStudent.is_registered === 0 ? 'unregistered_upgraded' : 'registered_existing',
+        message: existingStudent.is_registered === 0
+          ? `Permanent student record activated and attendance recorded for ${updatedStudent.name} (${updatedStudent.student_id})`
+          : `Attendance recorded against existing registered record for ${updatedStudent.name} (${updatedStudent.student_id})`,
+        student: updatedStudent
       });
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -558,13 +621,13 @@ router.post('/attendance/manual-unregistered', (req, res) => {
           student: existingStudent
         });
       }
-      return res.status(500).json({ error: 'Database error recording attendance' });
+      return res.status(500).json({ error: 'Database error recording attendance: ' + err.message });
     }
   }
 
-  // Case C: Student does NOT exist in the database.
-  // Create unregistered student (is_registered = 0) and attendance atomically in a transaction.
-  const createUnregisteredTx = db.transaction(() => {
+  // Case A: Student does NOT exist in the database.
+  // Create permanent student record (is_registered = 1) and record attendance atomically in a transaction.
+  const createStudentTx = db.transaction(() => {
     let baseId = computeStudentIDForWalkin(trimmedName, cleanMobile, cleanUsn);
     let candidateId = baseId;
     let counter = 1;
@@ -577,45 +640,47 @@ router.post('/attendance/manual-unregistered', (req, res) => {
 
     db.prepare(`
       INSERT INTO students (name, usn, department, year, cycle, mobile, student_id, is_registered)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     `).run(trimmedName, cleanUsn, finalDepartment, numYear, studentCycle, cleanMobile, finalStudentId);
 
     db.prepare(`
       INSERT INTO attendance (session_id, student_id, geo_verified, token_used, is_manual, remarks, marked_by)
-      VALUES (?, ?, 1, 'MANUAL_UNREGISTERED', 1, ?, ?)
+      VALUES (?, ?, 1, 'MANUAL_ADMIN_OVERRIDE', 1, ?, ?)
     `).run(numSessionId, finalStudentId, customRemarks, adminName);
 
-    return {
-      student_id: finalStudentId,
-      name: trimmedName,
-      usn: cleanUsn,
-      department: finalDepartment,
-      year: numYear,
-      cycle: studentCycle,
-      mobile: cleanMobile,
-      is_registered: 0
-    };
+    return db.prepare('SELECT * FROM students WHERE student_id = ?').get(finalStudentId);
   });
 
   try {
-    const newStudent = createUnregisteredTx();
+    const newStudent = createStudentTx();
     return res.status(201).json({
       success: true,
-      category: 'unregistered_new',
-      message: `Unregistered student ${trimmedName} (${newStudent.student_id}) added and attendance marked`,
+      category: 'registered_new',
+      message: `Permanent student record created and attendance marked for ${trimmedName} (${newStudent.student_id})`,
       student: newStudent
     });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
-      return res.status(409).json({ error: 'Duplicate entry detected (USN or session attendance already exists)' });
+      const duplicateStudent = db.prepare('SELECT * FROM students WHERE UPPER(TRIM(usn)) = ? OR UPPER(TRIM(student_id)) = ?').get(cleanUsn, cleanUsn);
+      if (duplicateStudent) {
+        const existingAtt = db.prepare('SELECT id FROM attendance WHERE session_id = ? AND student_id = ?').get(numSessionId, duplicateStudent.student_id);
+        if (existingAtt) {
+          return res.status(409).json({
+            error: `Attendance already recorded for ${duplicateStudent.name} (${duplicateStudent.student_id}) in this session`,
+            already_marked: true,
+            student: duplicateStudent
+          });
+        }
+      }
+      return res.status(409).json({ error: 'Duplicate entry detected (USN or student ID already exists)' });
     }
-    console.error('[Manual Unregistered Error]', err);
-    return res.status(500).json({ error: 'Failed to record unregistered student attendance: ' + err.message });
+    console.error('[Manual Attendance Error]', err);
+    return res.status(500).json({ error: 'Failed to record student attendance: ' + err.message });
   }
 });
 
 // Delete an attendance entry if recorded in error
-router.delete('/attendance/:attendanceId', (req, res) => {
+router.delete('/attendance/:attendanceId', requirePermission('manage_live_attendance'), (req, res) => {
   const id = parseInt(req.params.attendanceId, 10);
   const delStmt = db.prepare('DELETE FROM attendance WHERE id = ?');
   const result = delStmt.run(id);
@@ -628,7 +693,7 @@ router.delete('/attendance/:attendanceId', (req, res) => {
 });
 
 // Edit an attendance entry (Update Student ID or GPS Verification)
-router.put('/attendance/:attendanceId', (req, res) => {
+router.put('/attendance/:attendanceId', requirePermission('manage_live_attendance'), (req, res) => {
   const id = parseInt(req.params.attendanceId, 10);
   const { student_id, geo_verified, marked_at } = req.body;
 
@@ -684,7 +749,7 @@ router.put('/attendance/:attendanceId', (req, res) => {
 });
 
 // 8. Student Roster Management (Search, Filter, List)
-router.get('/students', (req, res) => {
+router.get('/students', requirePermission('view_students'), (req, res) => {
   const { search, year, department, registration_status } = req.query;
 
   let query = 'SELECT * FROM students WHERE 1=1';
@@ -719,7 +784,7 @@ router.get('/students', (req, res) => {
 });
 
 // Edit a student roster entry
-router.put('/students/:studentId', (req, res) => {
+router.put('/students/:studentId', requirePermission('manage_students'), (req, res) => {
   const currentStudentId = req.params.studentId.toUpperCase();
   const { name, usn, department, year, cycle, mobile, new_student_id, is_registered } = req.body;
 
@@ -772,7 +837,7 @@ router.put('/students/:studentId', (req, res) => {
 });
 
 // Delete a student from roster
-router.delete('/students/:studentId', (req, res) => {
+router.delete('/students/:studentId', requirePermission('manage_students'), (req, res) => {
   const { studentId } = req.params;
   const result = db.prepare('DELETE FROM students WHERE student_id = ?').run(studentId.toUpperCase());
 
@@ -803,13 +868,286 @@ router.post('/change-password', (req, res) => {
 
   const salt = bcrypt.genSaltSync(10);
   const hash = bcrypt.hashSync(new_password, salt);
-  db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, admin.id);
+  db.prepare('UPDATE admins SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, admin.id);
+
+  try {
+    const { query } = require('../neon/postgres');
+    query('UPDATE admins SET password_hash = $1, updated_at = NOW() WHERE username = $2', [hash, admin.username])
+      .catch(e => console.warn('[Neon Sync Password Update Error]', e.message));
+  } catch (syncErr) {}
 
   return res.json({ success: true, message: 'Password changed successfully' });
 });
 
+// ==========================================
+// USER MANAGEMENT & ROLE-BASED ACCESS CONTROL
+// ==========================================
+
+const VALID_ROLES = ['super_admin', 'attendance_manager', 'qr_manager', 'custom'];
+
+const ROLE_DEFAULT_PERMISSIONS = {
+  super_admin: ['*'],
+  attendance_manager: [
+    'view_dashboard',
+    'view_live_attendance',
+    'manage_live_attendance',
+    'manage_attendance_qr',
+    'view_students',
+    'view_reports',
+    'export_reports'
+  ],
+  qr_manager: [
+    'view_dashboard',
+    'view_registration_qr',
+    'display_registration_qr',
+    'manage_attendance_qr'
+  ],
+  custom: ['view_dashboard']
+};
+
+// 9b. List All Admin Users
+router.get('/users', requirePermission('manage_users'), (req, res) => {
+  const users = db.prepare(`
+    SELECT id, username, display_name, role, permissions, is_active, created_at, updated_at 
+    FROM admins 
+    ORDER BY id ASC
+  `).all();
+
+  const formattedUsers = users.map(u => ({
+    ...u,
+    is_active: Number(u.is_active) === 1,
+    permissions: parsePermissions(u.permissions, u.role)
+  }));
+
+  return res.json({ success: true, users: formattedUsers });
+});
+
+// 9c. Create New User Account
+router.post('/users', requirePermission('manage_users'), (req, res) => {
+  const { username, password, confirm_password, display_name, role, permissions } = req.body;
+
+  if (!username || typeof username !== 'string' || !username.trim()) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(cleanUsername)) {
+    return res.status(400).json({ error: 'Username must be 3-30 characters long and contain only letters, numbers, underscores, dashes, or dots' });
+  }
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+  }
+
+  if (confirm_password !== undefined && password !== confirm_password) {
+    return res.status(400).json({ error: 'Passwords do not match' });
+  }
+
+  const existing = db.prepare('SELECT id FROM admins WHERE LOWER(username) = ?').get(cleanUsername);
+  if (existing) {
+    return res.status(409).json({ error: `Username "${cleanUsername}" is already taken` });
+  }
+
+  const targetRole = VALID_ROLES.includes(role) ? role : 'custom';
+  let targetPerms;
+  if (targetRole === 'super_admin') {
+    targetPerms = ['*'];
+  } else if (targetRole === 'custom') {
+    targetPerms = Array.isArray(permissions) ? permissions : (ROLE_DEFAULT_PERMISSIONS.custom || ['view_dashboard']);
+  } else {
+    targetPerms = ROLE_DEFAULT_PERMISSIONS[targetRole] || ['view_dashboard'];
+  }
+
+  const finalDisplayName = (display_name && display_name.trim()) ? display_name.trim() : cleanUsername;
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(password, salt);
+
+  const insert = db.prepare(`
+    INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `);
+
+  const result = insert.run(
+    cleanUsername,
+    hash,
+    finalDisplayName,
+    targetRole,
+    JSON.stringify(targetPerms)
+  );
+
+  const newUserId = result.lastInsertRowid;
+  const createdUser = db.prepare('SELECT id, username, display_name, role, permissions, is_active, created_at, updated_at FROM admins WHERE id = ?').get(newUserId);
+
+  // Sync to Neon Postgres
+  try {
+    const { query } = require('../neon/postgres');
+    query(`
+      INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, 1, NOW(), NOW())
+      ON CONFLICT (username) DO UPDATE
+      SET password_hash = EXCLUDED.password_hash, display_name = EXCLUDED.display_name, role = EXCLUDED.role, permissions = EXCLUDED.permissions, is_active = 1, updated_at = NOW()
+    `, [cleanUsername, hash, finalDisplayName, targetRole, JSON.stringify(targetPerms)]).catch(e => console.warn('[Neon Sync User Create]', e.message));
+  } catch (syncErr) {}
+
+  return res.status(201).json({
+    success: true,
+    message: `User "${cleanUsername}" created successfully`,
+    user: {
+      ...createdUser,
+      is_active: true,
+      permissions: targetPerms
+    }
+  });
+});
+
+// 9d. Update Existing User Account
+router.put('/users/:id', requirePermission('manage_users'), (req, res) => {
+  const userId = parseInt(req.params.id, 10);
+  const { display_name, role, permissions, is_active, password, confirm_password } = req.body;
+
+  const target = db.prepare('SELECT * FROM admins WHERE id = ?').get(userId);
+  if (!target) {
+    return res.status(404).json({ error: 'User account not found' });
+  }
+
+  const isPrimaryAdmin = target.id === 1 || target.username === 'admin';
+
+  // Safeguards for Primary Admin
+  if (isPrimaryAdmin) {
+    if (is_active !== undefined && (is_active === 0 || is_active === false || is_active === '0')) {
+      return res.status(403).json({ error: 'The primary administrator account cannot be deactivated.' });
+    }
+    if (role !== undefined && role !== 'super_admin') {
+      return res.status(403).json({ error: 'The primary administrator must remain a super_admin.' });
+    }
+  }
+
+  // Safeguard: Ensure at least one active super admin remains
+  if (target.role === 'super_admin') {
+    const demoting = role !== undefined && role !== 'super_admin';
+    const deactivating = is_active !== undefined && (is_active === 0 || is_active === false || is_active === '0');
+    if (demoting || deactivating) {
+      const activeSuperAdmins = db.prepare('SELECT COUNT(*) as count FROM admins WHERE role = "super_admin" AND is_active = 1').get().count;
+      if (activeSuperAdmins <= 1) {
+        return res.status(403).json({ error: 'Cannot deactivate or demote the only remaining active super administrator.' });
+      }
+    }
+  }
+
+  let effRole = target.role;
+  if (role && VALID_ROLES.includes(role)) {
+    effRole = role;
+  }
+
+  let effPerms;
+  if (effRole === 'super_admin') {
+    effPerms = ['*'];
+  } else if (effRole === 'custom') {
+    effPerms = Array.isArray(permissions) ? permissions : parsePermissions(target.permissions, target.role);
+  } else {
+    effPerms = ROLE_DEFAULT_PERMISSIONS[effRole] || ['view_dashboard'];
+  }
+
+  const effDisplayName = display_name !== undefined ? (display_name ? display_name.trim() : target.username) : target.display_name;
+  const effIsActive = is_active !== undefined ? (is_active === 1 || is_active === true || is_active === '1' ? 1 : 0) : target.is_active;
+
+  let newHash = null;
+  if (password) {
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+    }
+    if (confirm_password !== undefined && password !== confirm_password) {
+      return res.status(400).json({ error: 'Passwords do not match' });
+    }
+    const salt = bcrypt.genSaltSync(10);
+    newHash = bcrypt.hashSync(password, salt);
+  }
+
+  if (newHash) {
+    db.prepare(`
+      UPDATE admins 
+      SET password_hash = ?, display_name = ?, role = ?, permissions = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(newHash, effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, userId);
+  } else {
+    db.prepare(`
+      UPDATE admins 
+      SET display_name = ?, role = ?, permissions = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, userId);
+  }
+
+  const updated = db.prepare('SELECT id, username, display_name, role, permissions, is_active, created_at, updated_at FROM admins WHERE id = ?').get(userId);
+
+  // Sync to Neon Postgres
+  try {
+    const { query } = require('../neon/postgres');
+    if (newHash) {
+      query(`
+        UPDATE admins 
+        SET password_hash = $1, display_name = $2, role = $3, permissions = $4, is_active = $5, updated_at = NOW() 
+        WHERE username = $6
+      `, [newHash, effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, target.username]).catch(e => console.warn('[Neon Sync User Update]', e.message));
+    } else {
+      query(`
+        UPDATE admins 
+        SET display_name = $1, role = $2, permissions = $3, is_active = $4, updated_at = NOW() 
+        WHERE username = $5
+      `, [effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, target.username]).catch(e => console.warn('[Neon Sync User Update]', e.message));
+    }
+  } catch (syncErr) {}
+
+  return res.json({
+    success: true,
+    message: `User "${target.username}" updated successfully`,
+    user: {
+      ...updated,
+      is_active: Number(updated.is_active) === 1,
+      permissions: effPerms
+    }
+  });
+});
+
+// 9e. Delete User Account
+router.delete('/users/:id', requirePermission('manage_users'), (req, res) => {
+  const userId = parseInt(req.params.id, 10);
+  const target = db.prepare('SELECT * FROM admins WHERE id = ?').get(userId);
+
+  if (!target) {
+    return res.status(404).json({ error: 'User account not found' });
+  }
+
+  // Safeguard: Cannot delete Primary Admin
+  if (target.id === 1 || target.username === 'admin') {
+    return res.status(403).json({ error: 'The primary administrator account cannot be deleted.' });
+  }
+
+  // Safeguard: Cannot delete self
+  if (req.admin.id === target.id) {
+    return res.status(403).json({ error: 'You cannot delete your own account while logged in.' });
+  }
+
+  // Safeguard: Ensure at least one active super admin remains
+  if (target.role === 'super_admin') {
+    const activeSuperAdmins = db.prepare('SELECT COUNT(*) as count FROM admins WHERE role = "super_admin" AND is_active = 1').get().count;
+    if (activeSuperAdmins <= 1) {
+      return res.status(403).json({ error: 'Cannot delete the only remaining active super administrator.' });
+    }
+  }
+
+  db.prepare('DELETE FROM admins WHERE id = ?').run(userId);
+
+  // Sync delete to Neon Postgres
+  try {
+    const { query } = require('../neon/postgres');
+    query('DELETE FROM admins WHERE username = $1', [target.username]).catch(e => console.warn('[Neon Sync User Delete]', e.message));
+  } catch (syncErr) {}
+
+  return res.json({ success: true, message: `User "${target.username}" deleted successfully` });
+});
+
 // 10. Venue Config (Persistent Map-based auditorium/venue settings)
-router.get('/venue-config', (req, res) => {
+router.get('/venue-config', requirePermission('manage_settings'), (req, res) => {
   let config = db.prepare('SELECT * FROM venue_configs ORDER BY id DESC LIMIT 1').get();
   if (!config) {
     config = {
@@ -824,7 +1162,7 @@ router.get('/venue-config', (req, res) => {
   return res.json({ success: true, config });
 });
 
-router.post('/venue-config', (req, res) => {
+router.post('/venue-config', requirePermission('manage_settings'), (req, res) => {
   const { venue_name, geo_lat, geo_lng, geo_radius_m, geo_corners, geo_type, mappls_api_key } = req.body;
   const venueType = geo_type === 'polygon' ? 'polygon' : 'circle';
   const cornersJson = geo_corners ? (typeof geo_corners === 'string' ? geo_corners : JSON.stringify(geo_corners)) : null;
@@ -892,12 +1230,12 @@ router.post('/venue-config', (req, res) => {
 });
 
 // 11. Saved Preset Locations Management
-router.get('/saved-locations', (req, res) => {
+router.get('/saved-locations', requirePermission('manage_settings'), (req, res) => {
   const locations = db.prepare('SELECT * FROM saved_locations ORDER BY is_default DESC, id ASC').all();
   return res.json({ success: true, locations });
 });
 
-router.post('/saved-locations', (req, res) => {
+router.post('/saved-locations', requirePermission('manage_settings'), (req, res) => {
   const { name, description, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Location name is required' });
@@ -947,7 +1285,7 @@ router.post('/saved-locations', (req, res) => {
   return res.status(201).json({ success: true, location: newLoc, message: 'Preset location saved successfully' });
 });
 
-router.put('/saved-locations/:id', (req, res) => {
+router.put('/saved-locations/:id', requirePermission('manage_settings'), (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { name, description, type, geo_lat, geo_lng, geo_radius_m, geo_corners, is_default } = req.body;
 
@@ -997,7 +1335,7 @@ router.put('/saved-locations/:id', (req, res) => {
   return res.json({ success: true, location: updated, message: 'Saved location updated' });
 });
 
-router.delete('/saved-locations/:id', (req, res) => {
+router.delete('/saved-locations/:id', requirePermission('manage_settings'), (req, res) => {
   const id = parseInt(req.params.id, 10);
   const result = db.prepare('DELETE FROM saved_locations WHERE id = ?').run(id);
   if (result.changes === 0) {

@@ -109,11 +109,11 @@ async function runTestSuite() {
   // 8. E2E Archival of Attendance Export to Neon Object Storage
   await testStep('Full Workflow: Export Attendance -> Auto-Archive to Neon Storage', async () => {
     // 1. Login as admin
-    const password = process.env.ADMIN_PASSWORD || 'admin123';
+    const password = process.env.ADMIN_PASSWORD || '22Mon08Aug2005';
     let loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' })
+      body: JSON.stringify({ username: 'admin', password })
     });
     let loginData = await loginRes.json();
     if (!loginData.token) {

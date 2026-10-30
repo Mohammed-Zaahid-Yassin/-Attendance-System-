@@ -16,7 +16,8 @@ import {
   Filter,
   ArrowUpDown,
   X,
-  Edit2
+  Edit2,
+  UserCheck
 } from 'lucide-react';
 import { MVJCE_SCHOOLS, ALL_MVJCE_DEPARTMENTS } from '../../utils/departments';
 
@@ -79,6 +80,12 @@ export default function LiveAttendance() {
   const [manualMsg, setManualMsg] = useState('');
   const [manualMsgType, setManualMsgType] = useState('info'); // 'success' | 'error' | 'info'
 
+  // Registered students roster for search, auto-completion, and selection
+  const [registeredRoster, setRegisteredRoster] = useState([]);
+  const [showRosterSelect, setShowRosterSelect] = useState(false);
+  const [lastCreatedStudent, setLastCreatedStudent] = useState(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
   // Unregistered student form fields
   const [unregName, setUnregName] = useState('');
   const [unregUsn, setUnregUsn] = useState('');
@@ -112,6 +119,20 @@ export default function LiveAttendance() {
       setManualStudentId(lookupParam.trim().toUpperCase());
     }
   }, [searchParams]);
+
+  // Fetch all registered students for instant search and selection
+  const fetchRegisteredRoster = async () => {
+    try {
+      const res = await axios.get('/api/admin/students', { headers: getAuthHeaders() });
+      setRegisteredRoster(res.data.students || []);
+    } catch (err) {
+      console.warn('Failed to load registered roster', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchRegisteredRoster();
+  }, []);
 
   // 1. Fetch all sessions for dropdown selector
   useEffect(() => {
@@ -364,7 +385,27 @@ export default function LiveAttendance() {
         { headers: getAuthHeaders() }
       );
 
-      setManualMsg(res.data.message || 'Unregistered student attendance recorded successfully!');
+      const createdStudent = res.data.student;
+      if (createdStudent) {
+        setLastCreatedStudent(createdStudent);
+        setRegisteredRoster((prev) => {
+          const exists = prev.some(
+            (s) => s.student_id === createdStudent.student_id || s.usn === createdStudent.usn
+          );
+          if (exists) {
+            return prev.map((s) =>
+              s.student_id === createdStudent.student_id || s.usn === createdStudent.usn ? createdStudent : s
+            );
+          }
+          return [createdStudent, ...prev];
+        });
+      }
+      fetchRegisteredRoster();
+
+      setManualMsg(
+        res.data.message ||
+          `Student ${createdStudent ? createdStudent.name : ''} (${createdStudent ? createdStudent.student_id : ''}) permanently registered and attendance recorded!`
+      );
       setManualMsgType('success');
 
       // Clear fields on success
@@ -637,18 +678,100 @@ export default function LiveAttendance() {
             {/* Registered Student Form */}
             {manualMode === 'registered' ? (
               <form onSubmit={handleManualMark} className="space-y-2.5">
-                <div>
-                  <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
-                    Student ID, USN, or Name *
-                  </label>
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] uppercase font-semibold text-[#a39b94]">
+                      Student ID, USN, or Name *
+                    </label>
+                    {registeredRoster.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRosterSelect(!showRosterSelect)}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 font-medium underline flex items-center gap-1"
+                      >
+                        {showRosterSelect ? 'Hide Roster Picker' : `Browse Roster (${registeredRoster.length})`}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Optional Quick Select Dropdown */}
+                  {showRosterSelect && (
+                    <div className="mb-2">
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setManualStudentId(e.target.value);
+                            setShowRosterSelect(false);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-amber-500/40 bg-[#14110e] px-2.5 py-1.5 text-xs text-amber-300 focus:border-amber-500 focus:outline-none"
+                      >
+                        <option value="">-- Choose Registered Student from Roster --</option>
+                        {registeredRoster.map((s) => (
+                          <option key={s.id || s.student_id} value={s.student_id}>
+                            {s.name} ({s.usn || s.student_id}) — {s.student_id} [{s.department || 'N/A'}]
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <input
                     type="text"
                     required
                     placeholder="e.g. ARJU9870, 1MJ24EC094, or Arjun"
                     value={manualStudentId}
-                    onChange={(e) => setManualStudentId(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setManualStudentId(e.target.value.toUpperCase());
+                      setIsInputFocused(true);
+                    }}
+                    onFocus={() => setIsInputFocused(true)}
+                    onBlur={() => {
+                      // Slight delay to allow clicking on a suggestion item
+                      setTimeout(() => setIsInputFocused(false), 250);
+                    }}
                     className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3 py-2 text-xs font-mono uppercase text-[#f5f0ea] placeholder-[#554e48] focus:border-amber-500 focus:outline-none"
                   />
+
+                  {/* Live Search Suggestions Dropdown */}
+                  {isInputFocused && manualStudentId.trim().length >= 1 && (
+                    <div className="absolute left-0 right-0 z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border border-amber-500/30 bg-[#14110e] shadow-2xl backdrop-blur-md">
+                      {registeredRoster
+                        .filter((s) => {
+                          const q = manualStudentId.trim().toUpperCase();
+                          return (
+                            (s.student_id && s.student_id.toUpperCase().includes(q)) ||
+                            (s.usn && s.usn.toUpperCase().includes(q)) ||
+                            (s.name && s.name.toUpperCase().includes(q)) ||
+                            (s.department && s.department.toUpperCase().includes(q))
+                          );
+                        })
+                        .slice(0, 6)
+                        .map((s) => (
+                          <button
+                            key={s.id || s.student_id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setManualStudentId(s.student_id);
+                              setIsInputFocused(false);
+                            }}
+                            className="w-full text-left px-3 py-2 border-b border-[rgba(255,235,215,0.06)] hover:bg-amber-500/20 transition flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-[#f5f0ea] truncate">{s.name}</div>
+                              <div className="text-[10px] text-[#a39b94] truncate">
+                                {s.department} · Year {s.year}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="font-mono text-[11px] font-bold text-amber-400">{s.student_id}</div>
+                              <div className="text-[9px] font-mono text-[#a39b94]">{s.usn}</div>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase font-semibold text-[#a39b94] mb-1">
@@ -813,6 +936,23 @@ export default function LiveAttendance() {
                   )}
                   <span className="flex-1 text-[11px] leading-tight">{manualMsg}</span>
                 </div>
+
+                {/* If an unregistered student was just added, offer 1-click switch to Registered Mode */}
+                {lastCreatedStudent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualMode('registered');
+                      setManualStudentId(lastCreatedStudent.student_id);
+                      setManualMsg(`Student ${lastCreatedStudent.name} (${lastCreatedStudent.student_id}) selected. Ready to mark attendance in any session!`);
+                      setManualMsgType('info');
+                    }}
+                    className="self-start inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30 transition"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Select ${lastCreatedStudent.name} (${lastCreatedStudent.student_id}) in Registered Portal</span>
+                  </button>
+                )}
 
                 {/* If student wasn't found in registered roster, offer 1-click switch to + Add Unregistered */}
                 {manualMode === 'registered' && (manualMsg.includes('not found') || manualMsg.includes('Unregistered') || manualMsg.includes('+ Add Unregistered')) && (

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node --test tests/regression.test.js tests/all-features-e2e.test.js tests/manual-attendance.test.js"
+    "test": "node --test tests/regression.test.js tests/all-features-e2e.test.js tests/manual-attendance.test.js tests/rbac-user-management.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1158.0",

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const QRCode = require('qrcode');
 const db = require('../db');
-const adminAuth = require('../middleware/adminAuth');
+const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 require('dotenv').config();
 
 const REGISTRATION_KEY = process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890';
@@ -172,7 +172,7 @@ router.post('/register', (req, res) => {
 });
 
 // Admin Route to generate the static QR code for student registration
-router.get('/admin/registration-qr', adminAuth, async (req, res) => {
+router.get('/admin/registration-qr', adminAuth, requirePermission('view_registration_qr'), async (req, res) => {
   try {
     // Determine the frontend origin:
     // 1. Explicit ?origin query param sent by frontend (e.g. window.location.origin)

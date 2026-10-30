@@ -266,19 +266,53 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS admins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL
+      password_hash TEXT NOT NULL,
+      display_name TEXT DEFAULT 'Administrator',
+      role TEXT DEFAULT 'super_admin',
+      permissions TEXT DEFAULT '["*"]',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
+  // Migrate admins table if missing columns
+  try {
+    const adminCols = db.prepare(`PRAGMA table_info(admins)`).all().map(c => c.name);
+    if (!adminCols.includes('display_name')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN display_name TEXT DEFAULT 'Administrator'`);
+    }
+    if (!adminCols.includes('role')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN role TEXT DEFAULT 'super_admin'`);
+    }
+    if (!adminCols.includes('permissions')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN permissions TEXT DEFAULT '["*"]'`);
+    }
+    if (!adminCols.includes('is_active')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN is_active INTEGER DEFAULT 1`);
+    }
+    if (!adminCols.includes('created_at')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN created_at DATETIME`);
+    }
+    if (!adminCols.includes('updated_at')) {
+      db.exec(`ALTER TABLE admins ADD COLUMN updated_at DATETIME`);
+    }
+  } catch (migErr) {
+    console.error('[DB Migration admins]', migErr);
+  }
+
   // Create default admin if none exists
   const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  const adminPassword = process.env.ADMIN_PASSWORD || '22Mon08Aug2005';
 
   const existingAdmin = db.prepare('SELECT id FROM admins WHERE username = ?').get(adminUsername);
   if (!existingAdmin) {
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(adminPassword, salt);
-    db.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(adminUsername, hash);
+    db.prepare(`
+      INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active) 
+      VALUES (?, ?, 'Primary Administrator', 'super_admin', '["*"]', 1)
+    `).run(adminUsername, hash);
     console.log(`[DB] Default admin initialized: username='${adminUsername}'`);
   }
 }

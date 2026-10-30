@@ -49,7 +49,7 @@ ENV PORT=3001
 ENV DB_PATH=/app/data/attendance.db
 ENV REGISTRATION_KEY=STATIC_REG_QR_KEY_SECRET_7890
 ENV ADMIN_USERNAME=admin
-ENV ADMIN_PASSWORD=admin123
+ENV ADMIN_PASSWORD=22Mon08Aug2005
 ENV JWT_SECRET=spotlight_mvjce_production_secret_key_2026
 
 # Persistent volume for SQLite data

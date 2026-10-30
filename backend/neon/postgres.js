@@ -133,8 +133,21 @@ async function initNeonDatabase(sqliteDb = null) {
       CREATE TABLE IF NOT EXISTS admins (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL
+        password_hash TEXT NOT NULL,
+        display_name TEXT DEFAULT 'Administrator',
+        role TEXT DEFAULT 'super_admin',
+        permissions TEXT DEFAULT '["*"]',
+        is_active INTEGER DEFAULT 1,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
+
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT 'Administrator';
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'super_admin';
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT '["*"]';
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1;
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
 
       -- Indexes for fast query performance
       CREATE INDEX IF NOT EXISTS idx_attendance_session ON attendance(session_id);
@@ -152,7 +165,10 @@ async function initNeonDatabase(sqliteDb = null) {
       const adminPassword = process.env.ADMIN_PASSWORD || '22Mon08Aug2005';
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(adminPassword, salt);
-      await client.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [adminUsername, hash]);
+      await client.query(`
+        INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active) 
+        VALUES ($1, $2, 'Primary Administrator', 'super_admin', '["*"]', 1)
+      `, [adminUsername, hash]);
       console.log(`[Neon Postgres] Default admin seeded: '${adminUsername}'`);
     }
 

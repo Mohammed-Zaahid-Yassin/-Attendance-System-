@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -10,7 +10,9 @@ import {
   Menu, 
   X, 
   QrCode,
-  Sparkles
+  Sparkles,
+  Shield,
+  User
 } from 'lucide-react';
 import { MvjLogo, DeveloperCredit } from './Branding';
 
@@ -18,18 +20,59 @@ export default function AdminLayout({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
+  const currentUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('admin_user')) || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const hasPerm = (perm) => {
+    if (!currentUser) return true;
+    if (currentUser.role === 'super_admin') return true;
+    const perms = Array.isArray(currentUser.permissions) ? currentUser.permissions : [];
+    if (perms.includes('*') || perms.includes(perm)) return true;
+    if (currentUser.role === 'attendance_manager') {
+      const allowed = ['view_dashboard', 'view_live_attendance', 'manage_live_attendance', 'manage_attendance_qr', 'view_students', 'view_reports', 'export_reports'];
+      if (allowed.includes(perm)) return true;
+    }
+    if (currentUser.role === 'qr_manager') {
+      const allowed = ['view_dashboard', 'view_registration_qr', 'display_registration_qr', 'manage_attendance_qr'];
+      if (allowed.includes(perm)) return true;
+    }
+    return false;
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');
     navigate('/admin');
   };
 
-  const navItems = [
-    { label: 'Control Center', path: '/admin/dashboard', icon: LayoutDashboard },
-    { label: 'Live Attendance', path: '/admin/attendance', icon: Radio },
-    { label: 'Student Roster', path: '/admin/students', icon: Users },
-    { label: 'Registration & Settings', path: '/admin/settings', icon: Settings },
+  const allNavItems = [
+    { label: 'Control Center', path: '/admin/dashboard', icon: LayoutDashboard, perm: 'view_dashboard' },
+    { label: 'Live Attendance', path: '/admin/attendance', icon: Radio, perm: 'view_live_attendance' },
+    { label: 'Student Roster', path: '/admin/students', icon: Users, perm: 'view_students' },
+    { label: 'Registration & Settings', path: '/admin/settings', icon: Settings, perm: 'manage_settings' },
   ];
+
+  const navItems = allNavItems.filter(item => {
+    if (item.path === '/admin/settings') {
+      return hasPerm('manage_settings') || hasPerm('view_registration_qr') || hasPerm('manage_users');
+    }
+    return hasPerm(item.perm);
+  });
+
+  const getRoleLabel = (role) => {
+    switch (role) {
+      case 'super_admin': return 'Super Admin';
+      case 'attendance_manager': return 'Attendance Mgr';
+      case 'qr_manager': return 'QR Manager';
+      case 'custom': return 'Staff Access';
+      default: return 'Administrator';
+    }
+  };
 
   return (
     <div className="min-h-screen min-h-[100dvh] bg-[#080605] text-[#f5f0ea] flex flex-col md:flex-row">
@@ -111,6 +154,36 @@ export default function AdminLayout({ children }) {
             </div>
             <span className="text-[10px] font-mono text-[#a39b94]">↗</span>
           </a>
+
+          {/* User Profile Badge */}
+          {currentUser && (
+            <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="h-7 w-7 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <User className="h-3.5 w-3.5 text-amber-400" />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-semibold text-[#f5f0ea] truncate">
+                    {currentUser.display_name || currentUser.username}
+                  </p>
+                  <p className="text-[10px] text-[#a39b94] font-mono truncate">
+                    @{currentUser.username}
+                  </p>
+                </div>
+              </div>
+              <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
+                currentUser.role === 'super_admin'
+                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                  : currentUser.role === 'attendance_manager'
+                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                  : currentUser.role === 'qr_manager'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}>
+                {getRoleLabel(currentUser.role)}
+              </span>
+            </div>
+          )}
 
           {/* Logout */}
           <button

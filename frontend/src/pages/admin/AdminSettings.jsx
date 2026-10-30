@@ -24,8 +24,17 @@ import {
   BookmarkCheck,
   Star,
   CornerDownLeft,
-  RefreshCw
+  RefreshCw,
+  Maximize2,
+  UserPlus,
+  Users,
+  ShieldCheck,
+  ShieldAlert,
+  UserCheck,
+  UserX,
+  Shield
 } from 'lucide-react';
+import FullscreenRegistrationModal from '../../components/FullscreenRegistrationModal';
 
 const MVJCE_DEFAULT = {
   lat: 12.985300,
@@ -76,6 +85,516 @@ function checkPolygonSelfIntersection(pts) {
     }
   }
   return false;
+}
+
+/* ─── User Management Constants & Modals ─────────────────────────────────── */
+const AVAILABLE_PERMISSIONS = [
+  { id: 'view_dashboard', label: 'View Dashboard & Stats', desc: 'Can view overview stats and metrics' },
+  { id: 'view_registration_qr', label: 'View Registration QR', desc: 'Can view static student registration QR card' },
+  { id: 'display_registration_qr', label: 'Display Fullscreen QR', desc: 'Can display fullscreen registration QR for auditoriums' },
+  { id: 'manage_attendance_qr', label: 'Manage Attendance QR', desc: 'Can freeze / resume dynamic session QR code tokens' },
+  { id: 'view_live_attendance', label: 'View Live Attendance', desc: 'Can view live incoming attendance streams' },
+  { id: 'manage_live_attendance', label: 'Manage Live Attendance', desc: 'Can start/stop sessions, manual mark & toggle geofences' },
+  { id: 'view_students', label: 'View Student Roster', desc: 'Can view, filter and search registered students' },
+  { id: 'manage_students', label: 'Manage Student Roster', desc: 'Can edit details and remove student roster entries' },
+  { id: 'view_reports', label: 'View Reports', desc: 'Can view attendance summaries and analytics' },
+  { id: 'export_reports', label: 'Export Reports', desc: 'Can download session attendance CSV and Excel XLSX files' },
+  { id: 'manage_settings', label: 'Manage App Settings', desc: 'Can configure venue coordinates, polygons and presets' },
+  { id: 'manage_users', label: 'Manage User Accounts', desc: 'Can create, edit, deactivate and delete admin accounts' }
+];
+
+const ROLE_PRESET_PERMS = {
+  super_admin: ['*'],
+  attendance_manager: ['view_dashboard', 'view_live_attendance', 'manage_live_attendance', 'manage_attendance_qr', 'view_students', 'view_reports', 'export_reports'],
+  qr_manager: ['view_dashboard', 'view_registration_qr', 'display_registration_qr', 'manage_attendance_qr'],
+  custom: ['view_dashboard']
+};
+
+function AddUserModal({ onSave, onClose }) {
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('super_admin');
+  const [permissions, setPermissions] = useState(ROLE_PRESET_PERMS.super_admin);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleRoleChange = (newRole) => {
+    setRole(newRole);
+    if (newRole !== 'custom') {
+      setPermissions(ROLE_PRESET_PERMS[newRole] || ['view_dashboard']);
+    }
+  };
+
+  const togglePermission = (permId) => {
+    if (permissions.includes('*')) {
+      const allPermIds = AVAILABLE_PERMISSIONS.map(p => p.id);
+      setPermissions(allPermIds.filter(id => id !== permId));
+      setRole('custom');
+      return;
+    }
+    if (permissions.includes(permId)) {
+      setPermissions(permissions.filter(p => p !== permId));
+    } else {
+      setPermissions([...permissions, permId]);
+    }
+    setRole('custom');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!username.trim()) { setError('Username is required'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters long'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+
+    setSaving(true);
+    try {
+      await onSave({
+        username: username.trim(),
+        display_name: displayName.trim() || username.trim(),
+        password,
+        confirm_password: confirmPassword,
+        role,
+        permissions: role === 'super_admin' ? ['*'] : permissions
+      });
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to create user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-xl rounded-2xl border border-[rgba(255,235,215,0.12)] bg-[#120f0d] p-6 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3">
+          <div className="flex items-center gap-2 text-amber-400">
+            <UserPlus className="h-5 w-5" />
+            <h3 className="font-serif text-lg text-[#f5f0ea]">Add New Administrative User</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 font-medium">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Username <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. jsharma"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Display Name
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. Dr. Jagdish Sharma"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+              Role Assignment <span className="text-red-400">*</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: 'super_admin', label: 'Super Admin', desc: 'Full system privileges' },
+                { id: 'attendance_manager', label: 'Attendance Mgr', desc: 'Live & manual attendance' },
+                { id: 'qr_manager', label: 'QR Manager', desc: 'Registration & display QR' },
+                { id: 'custom', label: 'Custom', desc: 'Granular checkbox selection' }
+              ].map(r => (
+                <button
+                  type="button"
+                  key={r.id}
+                  onClick={() => handleRoleChange(r.id)}
+                  className={`flex flex-col text-left p-2.5 rounded-xl border text-xs transition ${
+                    role === r.id
+                      ? 'border-amber-500 bg-amber-500/15 text-amber-300 font-semibold shadow-sm'
+                      : 'border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] hover:border-amber-500/40'
+                  }`}
+                >
+                  <span className="font-medium text-[#f5f0ea]">{r.label}</span>
+                  <span className="text-[10px] text-[#706860] mt-0.5 leading-tight">{r.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Granular Permissions Section */}
+          <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                Granular Permissions ({role === 'super_admin' ? 'All System Access Granted' : `${permissions.length} Enabled`})
+              </span>
+              {role !== 'super_admin' && (
+                <span className="text-[10px] text-amber-400/80">Select any to customize</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
+              {AVAILABLE_PERMISSIONS.map(p => {
+                const isChecked = permissions.includes('*') || permissions.includes(p.id);
+                return (
+                  <label
+                    key={p.id}
+                    className={`flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer select-none transition ${
+                      isChecked
+                        ? 'border-amber-500/40 bg-amber-500/10 text-[#f5f0ea]'
+                        : 'border-[rgba(255,235,215,0.05)] bg-[#14100c] text-[#706860] hover:text-[#a39b94]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => togglePermission(p.id)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-[rgba(255,235,215,0.2)] bg-[#181512] text-amber-500 focus:ring-0 focus:outline-none"
+                    />
+                    <div>
+                      <p className="font-medium leading-none text-[11px] text-[#f5f0ea]">{p.label}</p>
+                      <p className="text-[9px] text-[#a39b94] mt-0.5 leading-tight">{p.desc}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Password (min 6 chars) <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Confirm Password <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[rgba(255,235,215,0.08)]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-4 py-2 text-xs font-semibold text-[#f5f0ea] hover:border-amber-500 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2 text-xs font-semibold text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50"
+            >
+              {saving ? 'Creating…' : 'Create User Account'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditUserModal({ user, onSave, onClose }) {
+  const isPrimaryAdmin = user.id === 1 || user.username === 'admin';
+  const [displayName, setDisplayName] = useState(user.display_name || user.username || '');
+  const [role, setRole] = useState(user.role || 'super_admin');
+  const [isActive, setIsActive] = useState(Boolean(user.is_active));
+  const initialPerms = Array.isArray(user.permissions) ? user.permissions : (ROLE_PRESET_PERMS[user.role] || ['view_dashboard']);
+  const [permissions, setPermissions] = useState(initialPerms);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleRoleChange = (newRole) => {
+    if (isPrimaryAdmin) return;
+    setRole(newRole);
+    if (newRole !== 'custom') {
+      setPermissions(ROLE_PRESET_PERMS[newRole] || ['view_dashboard']);
+    }
+  };
+
+  const togglePermission = (permId) => {
+    if (isPrimaryAdmin) return;
+    if (permissions.includes('*')) {
+      const allPermIds = AVAILABLE_PERMISSIONS.map(p => p.id);
+      setPermissions(allPermIds.filter(id => id !== permId));
+      setRole('custom');
+      return;
+    }
+    if (permissions.includes(permId)) {
+      setPermissions(permissions.filter(p => p !== permId));
+    } else {
+      setPermissions([...permissions, permId]);
+    }
+    setRole('custom');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (password) {
+      if (password.length < 6) { setError('New password must be at least 6 characters long'); return; }
+      if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        display_name: displayName.trim(),
+        role: isPrimaryAdmin ? 'super_admin' : role,
+        is_active: isPrimaryAdmin ? 1 : (isActive ? 1 : 0),
+        permissions: (isPrimaryAdmin || role === 'super_admin') ? ['*'] : permissions
+      };
+      if (password) {
+        payload.password = password;
+        payload.confirm_password = confirmPassword;
+      }
+      await onSave(user.id, payload);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-xl rounded-2xl border border-[rgba(255,235,215,0.12)] bg-[#120f0d] p-6 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-[rgba(255,235,215,0.08)] pb-3">
+          <div className="flex items-center gap-2 text-amber-400">
+            <Pencil className="h-5 w-5" />
+            <div>
+              <h3 className="font-serif text-lg text-[#f5f0ea]">Edit Account Details</h3>
+              <p className="text-[11px] font-mono text-[#a39b94]">@{user.username}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[#a39b94] hover:bg-[#181512] hover:text-[#f5f0ea]">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 font-medium">
+            {error}
+          </div>
+        )}
+
+        {isPrimaryAdmin && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center gap-2">
+            <Shield className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>Primary Administrator account is protected. Super admin role and active status cannot be demoted or deactivated.</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Display Name
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#181512] px-3.5 py-2.5 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                Account Status
+              </label>
+              <button
+                type="button"
+                disabled={isPrimaryAdmin}
+                onClick={() => setIsActive(!isActive)}
+                className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-xs font-semibold transition ${
+                  isPrimaryAdmin 
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 opacity-80 cursor-not-allowed'
+                    : isActive
+                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/20'
+                    : 'border-red-500/40 bg-red-500/15 text-red-400 hover:bg-red-500/20'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  {isActive ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                  {isActive ? 'Active (Permitted to Log In)' : 'Deactivated (Access Revoked)'}
+                </span>
+                <span className="text-[10px] uppercase font-mono">{isPrimaryAdmin ? 'LOCKED' : 'TOGGLE'}</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+              Role Assignment
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: 'super_admin', label: 'Super Admin', desc: 'Full system privileges' },
+                { id: 'attendance_manager', label: 'Attendance Mgr', desc: 'Live & manual attendance' },
+                { id: 'qr_manager', label: 'QR Manager', desc: 'Registration & display QR' },
+                { id: 'custom', label: 'Custom', desc: 'Granular checkbox selection' }
+              ].map(r => (
+                <button
+                  type="button"
+                  key={r.id}
+                  disabled={isPrimaryAdmin}
+                  onClick={() => handleRoleChange(r.id)}
+                  className={`flex flex-col text-left p-2.5 rounded-xl border text-xs transition ${
+                    isPrimaryAdmin && r.id !== 'super_admin'
+                      ? 'opacity-30 cursor-not-allowed border-[rgba(255,235,215,0.05)] bg-[#14100c]'
+                      : role === r.id
+                      ? 'border-amber-500 bg-amber-500/15 text-amber-300 font-semibold shadow-sm'
+                      : 'border-[rgba(255,235,215,0.08)] bg-[#181512] text-[#a39b94] hover:border-amber-500/40'
+                  }`}
+                >
+                  <span className="font-medium text-[#f5f0ea]">{r.label}</span>
+                  <span className="text-[10px] text-[#706860] mt-0.5 leading-tight">{r.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Granular Permissions Section */}
+          <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                Granular Permissions ({role === 'super_admin' ? 'All System Access Granted' : `${permissions.length} Enabled`})
+              </span>
+              {role !== 'super_admin' && !isPrimaryAdmin && (
+                <span className="text-[10px] text-amber-400/80">Select any to customize</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
+              {AVAILABLE_PERMISSIONS.map(p => {
+                const isChecked = permissions.includes('*') || permissions.includes(p.id);
+                return (
+                  <label
+                    key={p.id}
+                    className={`flex items-start gap-2 p-2 rounded-lg border text-xs select-none transition ${
+                      isPrimaryAdmin
+                        ? 'opacity-70 cursor-not-allowed border-amber-500/20 bg-amber-500/5 text-[#f5f0ea]'
+                        : isChecked
+                        ? 'cursor-pointer border-amber-500/40 bg-amber-500/10 text-[#f5f0ea]'
+                        : 'cursor-pointer border-[rgba(255,235,215,0.05)] bg-[#14100c] text-[#706860] hover:text-[#a39b94]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={isPrimaryAdmin}
+                      checked={isChecked}
+                      onChange={() => togglePermission(p.id)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-[rgba(255,235,215,0.2)] bg-[#181512] text-amber-500 focus:ring-0 focus:outline-none"
+                    />
+                    <div>
+                      <p className="font-medium leading-none text-[11px] text-[#f5f0ea]">{p.label}</p>
+                      <p className="text-[9px] text-[#a39b94] mt-0.5 leading-tight">{p.desc}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Reset Password */}
+          <div className="rounded-xl border border-[rgba(255,235,215,0.08)] bg-[#181512] p-3.5 space-y-3">
+            <div className="flex items-center gap-2 text-amber-400">
+              <KeyRound className="h-4 w-4" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider">
+                Reset Password (Optional — Leave Blank to Keep Existing)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Leave empty to keep current"
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#120f0d] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#a39b94] mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full rounded-xl border border-[rgba(255,235,215,0.12)] bg-[#120f0d] px-3.5 py-2 text-xs text-[#f5f0ea] focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[rgba(255,235,215,0.08)]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-4 py-2 text-xs font-semibold text-[#f5f0ea] hover:border-amber-500 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2 text-xs font-semibold text-[#080605] shadow-amber-glow transition hover:opacity-95 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 /* ─── Saved Location Modal ─────────────────────────────────────────────────── */
@@ -374,6 +893,15 @@ export default function AdminSettings() {
   const [passwordError, setPasswordError] = useState('');
   const [loadingPass, setLoadingPass] = useState(false);
 
+  // User Management state
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userMsg, setUserMsg] = useState('');
+  const [userError, setUserError] = useState('');
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [showFullscreenReg, setShowFullscreenReg] = useState(false);
+
   const getAuthHeaders = () => {
     const currentToken = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
     return currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
@@ -431,11 +959,89 @@ export default function AdminSettings() {
       });
   }, []);
 
+  const loadUsers = useCallback(() => {
+    setLoadingUsers(true);
+    axios.get('/api/admin/users', axiosConfig)
+      .then((res) => {
+        setUsers(res.data?.users || []);
+        setUserError('');
+      })
+      .catch((err) => {
+        if (err.response?.status !== 403) {
+          console.error('Failed to load users:', err);
+        }
+      })
+      .finally(() => setLoadingUsers(false));
+  }, []);
+
+  const handleCreateUser = async (newUserData) => {
+    setUserMsg('');
+    setUserError('');
+    const res = await axios.post('/api/admin/users', newUserData, axiosConfig);
+    setUserMsg(res.data?.message || 'User created successfully');
+    loadUsers();
+    setTimeout(() => setUserMsg(''), 4000);
+  };
+
+  const handleUpdateUser = async (userId, updateData) => {
+    setUserMsg('');
+    setUserError('');
+    const res = await axios.put(`/api/admin/users/${userId}`, updateData, axiosConfig);
+    setUserMsg(res.data?.message || 'User updated successfully');
+    loadUsers();
+    setTimeout(() => setUserMsg(''), 4000);
+  };
+
+  const handleToggleUserActive = async (user) => {
+    if (user.id === 1 || user.username === 'admin') {
+      alert('The primary administrator account cannot be deactivated.');
+      return;
+    }
+    const newActive = !user.is_active;
+    const actionText = newActive ? 'activate' : 'deactivate';
+    if (!window.confirm(`Are you sure you want to ${actionText} user "${user.username}"?`)) {
+      return;
+    }
+    try {
+      setUserMsg('');
+      setUserError('');
+      const res = await axios.put(`/api/admin/users/${user.id}`, { is_active: newActive ? 1 : 0 }, axiosConfig);
+      setUserMsg(res.data?.message || `User ${user.username} ${actionText}d`);
+      loadUsers();
+      setTimeout(() => setUserMsg(''), 4000);
+    } catch (err) {
+      setUserError(err.response?.data?.error || err.message || `Failed to ${actionText} user`);
+      setTimeout(() => setUserError(''), 5000);
+    }
+  };
+
+  const handleDeleteUser = async (user) => {
+    if (user.id === 1 || user.username === 'admin') {
+      alert('The primary administrator account cannot be deleted.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to permanently delete user account "${user.username}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      setUserMsg('');
+      setUserError('');
+      const res = await axios.delete(`/api/admin/users/${user.id}`, axiosConfig);
+      setUserMsg(res.data?.message || `User ${user.username} deleted`);
+      loadUsers();
+      setTimeout(() => setUserMsg(''), 4000);
+    } catch (err) {
+      setUserError(err.response?.data?.error || err.message || 'Failed to delete user');
+      setTimeout(() => setUserError(''), 5000);
+    }
+  };
+
   useEffect(() => {
     loadRegistrationQr();
     loadVenueConfig();
     loadSavedLocations();
-  }, [loadRegistrationQr, loadVenueConfig, loadSavedLocations]);
+    loadUsers();
+  }, [loadRegistrationQr, loadVenueConfig, loadSavedLocations, loadUsers]);
 
   // ── Mode Switcher ──────────────────────────────────────────────────────
   const handleSwitchMode = (newMode) => {
@@ -1065,6 +1671,15 @@ export default function AdminSettings() {
               <h2 className="font-serif text-2xl font-normal text-[#f5f0ea] mt-1">Student Roster QR Card</h2>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFullscreenReg(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/20 transition"
+                title="View Fullscreen Presentation for Auditoriums"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span>Fullscreen</span>
+              </button>
               <button type="button" onClick={() => window.print()}
                 className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-[#f5f0ea] hover:border-amber-500"
               >
@@ -1082,10 +1697,18 @@ export default function AdminSettings() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
             <div className="flex flex-col items-center text-center">
-              <div className="rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-xl">
+              <div 
+                onClick={() => setShowFullscreenReg(true)}
+                className="group relative cursor-pointer rounded-2xl border border-[rgba(240,150,80,0.3)] bg-white p-3 shadow-xl hover:border-amber-400 hover:shadow-[0_0_25px_rgba(240,150,80,0.25)] transition duration-200"
+                title="Click to view Fullscreen Registration QR"
+              >
                 <div className="relative flex items-center justify-center">
-                  <img src={displayQrSrc} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain block" />
+                  <img src={displayQrSrc} alt="Student Registration Static QR Code" className="h-56 w-56 object-contain block group-hover:scale-[1.02] transition-transform duration-200" />
                   <QrNicOverlay />
+                </div>
+                <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs font-semibold gap-1 backdrop-blur-[1px]">
+                  <Maximize2 className="h-6 w-6 text-amber-300 drop-shadow" />
+                  <span className="text-amber-200 drop-shadow">Click for Fullscreen</span>
                 </div>
               </div>
               <span className="mt-3 text-[11px] uppercase tracking-widest text-[#a39b94]">Permanent Static QR</span>
@@ -1155,6 +1778,205 @@ export default function AdminSettings() {
             </button>
           </form>
         </div>
+
+        {/* ── SECTION 5: User Management & Access Control ────────────────── */}
+        <div className="rounded-2xl border border-[rgba(255,235,215,0.08)] bg-[#120f0d] p-6 sm:p-8 shadow-xl space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[rgba(255,235,215,0.08)] pb-4">
+            <div>
+              <div className="flex items-center gap-2 text-amber-400">
+                <Users className="h-4 w-4" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Access Control &amp; RBAC</span>
+              </div>
+              <h2 className="font-serif text-2xl font-normal text-[#f5f0ea] mt-1">User Management</h2>
+              <p className="mt-1 text-xs text-[#a39b94]">
+                Create and manage authorized administrative accounts, assign roles, and configure granular permissions.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={loadUsers}
+                disabled={loadingUsers}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,235,215,0.15)] bg-[#181512] px-3.5 py-1.5 text-xs font-medium text-[#f5f0ea] hover:border-amber-500 transition"
+                title="Refresh user accounts list"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingUsers ? 'animate-spin text-amber-400' : ''}`} />
+                <span>Refresh</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddUserModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold text-[#080605] shadow-amber-glow transition hover:opacity-95"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>Add New User</span>
+              </button>
+            </div>
+          </div>
+
+          {userMsg && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-400 font-medium">
+              {userMsg}
+            </div>
+          )}
+          {userError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 font-medium">
+              {userError}
+            </div>
+          )}
+
+          {/* User Accounts Table */}
+          <div className="overflow-x-auto rounded-xl border border-[rgba(255,235,215,0.06)] bg-[#14100c]">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-[rgba(255,235,215,0.08)] bg-[#181512] text-[10px] font-semibold uppercase tracking-wider text-[#a39b94]">
+                <tr>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Permissions Summary</th>
+                  <th className="px-4 py-3">Account Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[rgba(255,235,215,0.05)] text-[#f5f0ea]">
+                {loadingUsers && users.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-8 text-center text-[#a39b94]">
+                      Loading administrative user accounts…
+                    </td>
+                  </tr>
+                ) : users.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-8 text-center text-[#a39b94]">
+                      No additional user accounts found. Click "Add New User" to create staff accounts.
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((u) => {
+                    const isPrimary = u.id === 1 || u.username === 'admin';
+                    const perms = Array.isArray(u.permissions) ? u.permissions : [];
+                    const isSuper = u.role === 'super_admin' || perms.includes('*');
+
+                    return (
+                      <tr key={u.id} className="hover:bg-[#181512]/60 transition">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-8 w-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                              {isPrimary ? (
+                                <Shield className="h-4 w-4 text-amber-400" />
+                              ) : (
+                                <span className="font-semibold text-amber-400 uppercase text-[11px]">
+                                  {(u.display_name || u.username)[0]}
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-[#f5f0ea]">{u.display_name || u.username}</span>
+                                {isPrimary && (
+                                  <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                    Primary Admin
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] font-mono text-[#a39b94]">@{u.username}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            u.role === 'super_admin'
+                              ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                              : u.role === 'attendance_manager'
+                              ? 'bg-blue-500/15 border-blue-500/30 text-blue-300'
+                              : u.role === 'qr_manager'
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                              : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                          }`}>
+                            {u.role === 'super_admin' ? 'Super Admin'
+                              : u.role === 'attendance_manager' ? 'Attendance Mgr'
+                              : u.role === 'qr_manager' ? 'QR Manager'
+                              : 'Custom Role'}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {isSuper ? (
+                            <span className="text-purple-300 font-medium text-[11px] flex items-center gap-1">
+                              <ShieldCheck className="h-3.5 w-3.5 text-purple-400" />
+                              Full System Access (*)
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1 max-w-xs">
+                              {perms.slice(0, 3).map(p => (
+                                <span key={p} className="px-1.5 py-0.5 rounded bg-[#181512] border border-[rgba(255,235,215,0.06)] text-[10px] text-[#a39b94]">
+                                  {p.replace(/_/g, ' ')}
+                                </span>
+                              ))}
+                              {perms.length > 3 && (
+                                <span className="px-1.5 py-0.5 rounded bg-[#181512] text-[10px] text-amber-400 font-mono">
+                                  +{perms.length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {isPrimary ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold uppercase">
+                              <UserCheck className="h-3 w-3" />
+                              Active (Permanent)
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleUserActive(u)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border transition ${
+                                u.is_active
+                                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+                                  : 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
+                              }`}
+                              title={u.is_active ? 'Click to deactivate' : 'Click to activate'}
+                            >
+                              {u.is_active ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                              <span>{u.is_active ? 'Active' : 'Deactivated'}</span>
+                            </button>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingUser(u)}
+                              className="rounded-lg border border-[rgba(255,235,215,0.1)] bg-[#181512] p-1.5 text-[#f5f0ea] hover:border-amber-500 hover:text-amber-400 transition"
+                              title="Edit user details and permissions"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+
+                            {!isPrimary && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u)}
+                                className="rounded-lg border border-red-500/20 bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/20 transition"
+                                title="Delete user account"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* ── Saved Location Modal ────────────────────────────────────────── */}
@@ -1165,6 +1987,31 @@ export default function AdminSettings() {
           onClose={() => setEditingLocation(null)}
         />
       )}
+
+      {/* ── Add User Modal ─────────────────────────────────────────────── */}
+      {showAddUserModal && (
+        <AddUserModal
+          onSave={handleCreateUser}
+          onClose={() => setShowAddUserModal(false)}
+        />
+      )}
+
+      {/* ── Edit User Modal ────────────────────────────────────────────── */}
+      {editingUser !== null && (
+        <EditUserModal
+          user={editingUser}
+          onSave={handleUpdateUser}
+          onClose={() => setEditingUser(null)}
+        />
+      )}
+
+      {/* ── Fullscreen Registration QR Modal ────────────────────────────── */}
+      <FullscreenRegistrationModal
+        isOpen={showFullscreenReg}
+        onClose={() => setShowFullscreenReg(false)}
+        qrSrc={displayQrSrc}
+        registrationUrl={effectiveRegUrl}
+      />
     </AdminLayout>
   );
 }

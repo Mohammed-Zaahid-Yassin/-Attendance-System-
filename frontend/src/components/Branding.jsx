@@ -15,7 +15,7 @@ export function MvjLogo({ className = 'h-9 sm:h-10', alt = 'MVJ College of Engin
   );
 }
 
-export const NIC_TEAM_URL = 'https://nicmvjce.pages.dev/team';
+export const NIC_TEAM_URL = 'https://nicmvjce.pages.dev/';
 
 /**
  * NicLogo — Official NIC Club Logo
@@ -56,7 +56,7 @@ export function DeveloperCredit({ className = '', compact = false }) {
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#a39b94] font-medium hover:text-amber-400 hover:underline transition"
-          title="NIC Club Team — MVJCE"
+          title="NIC Club — MVJCE"
         >
           NIC Club, MVJCE
         </a>
@@ -91,7 +91,7 @@ export function QrNicOverlay({ sizePercent = 11.5, className = '' }) {
         href={NIC_TEAM_URL}
         target="_blank"
         rel="noopener noreferrer"
-        title="NIC Club Team — MVJCE (Click to view team)"
+        title="NIC Club Home — MVJCE"
         aria-label="Visit NIC Club Team page"
         className="w-full h-full bg-white rounded-[18%] shadow-sm border border-neutral-300/80 flex items-center justify-center p-[6%] overflow-hidden transition hover:scale-105 active:scale-95 cursor-pointer pointer-events-auto"
       >

@@ -5,7 +5,7 @@ const XLSX = require('xlsx');
 const db = require('../db');
 const { getCurrentToken } = require('../cron/tokenRotator');
 const { checkGeoFence } = require('../middleware/geoCheck');
-const adminAuth = require('../middleware/adminAuth');
+const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const { archiveAttendanceExport } = require('../neon/storage');
 
 
@@ -350,7 +350,7 @@ function computeExportFilename({ department, year, subjectName, hourNumber, ext 
 }
 
 // 5. Export Attendance as CSV
-router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
+router.get('/attendance/export/:sessionId', adminAuth, requirePermission('export_reports'), (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
   if (isNaN(sessionId)) {
     return res.status(400).json({ error: 'Invalid session ID' });
@@ -438,7 +438,7 @@ router.get('/attendance/export/:sessionId', adminAuth, (req, res) => {
 });
 
 // 6. Export Attendance as Excel XLSX
-router.get('/attendance/export-xlsx/:sessionId', adminAuth, (req, res) => {
+router.get('/attendance/export-xlsx/:sessionId', adminAuth, requirePermission('export_reports'), (req, res) => {
   const sessionId = parseInt(req.params.sessionId, 10);
   if (isNaN(sessionId)) {
     return res.status(400).json({ error: 'Invalid session ID' });
