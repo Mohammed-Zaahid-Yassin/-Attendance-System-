@@ -1,102 +1,66 @@
-# 🎭 SPOTLIGHT Attendance System — MVJCE
+# 🎭 SPOTLIGHT Attendance System — SQLite Edition
+### MVJ College of Engineering (MVJCE)
 
-A secure, real-time student attendance and event verification system for **MVJ College of Engineering (MVJCE)**, crafted to match the design aesthetic of the **[MVJCE Spotlight Portal](https://spotlight.webbywasp.com/)** and strictly adhere to anti-AI-slop design principles.
-
-Built for high concurrency (**1,200+ simultaneous attendees**) on AWS using **React**, **Tailwind CSS**, **Node.js Express**, and **SQLite (`better-sqlite3`)** in WAL mode with a multi-stage **Docker** deployment.
-
----
-
-## 🎨 Design Philosophy & Anti-AI Slop Compliance
-
-The front-end is crafted to match the visual language of `spotlight.webbywasp.com`:
-- **Color Palette**: Deep warm obsidian background (`#080605`), subtle warm hairline borders (`rgba(255,235,215,0.08)`), warm ivory typography (`#f5f0ea`), and Spotlight amber gradient pill buttons (`linear-gradient(135deg, #f09650, #d87e38)`).
-- **Typography**: Authentic editorial headings with **Playfair Display** (combining regular serif with italic highlights), **Inter** for crisp body text, and **JetBrains Mono** for student codes and numbers.
-- **Zero AI Clichés**: No floating sparkle emojis, no generic purple/indigo gradients, no fake bento boxes, no dummy loaders, no unstyled fallbacks, no single-file monolithic sprawl, and zero `console.log()` dummy submissions.
-- **Strict Page Isolation**: The system guarantees zero cross-visibility between user roles. Students on registration cannot see attendance or admin pages; students marking attendance cannot see registration or admin pages; the projector screen is a dedicated presentation display; and admin controls are strictly authenticated.
+A high-performance, real-time student attendance and event verification system for **MVJ College of Engineering**, crafted to match the design aesthetic of the **[MVJCE Spotlight Portal](https://spotlight.webbywasp.com/)** and powered exclusively by **SQLite (`better-sqlite3`)** with persistent storage on **Fly.io** or local container runtime.
 
 ---
 
-## 🛠️ Technology Stack
+## 🏛️ Technology Stack & Architecture
 
-| Layer | Technology | Details |
+| Layer | Component | Specification |
 |---|---|---|
-| **Frontend Framework** | **React.js** (Vite) | Responsive Mobile Web App & PWA |
-| **Theme & Styling** | **Tailwind CSS** | Custom Spotlight tokens & Google Fonts (`Playfair Display`, `Inter`) |
-| **QR Scanner** | **html5-qrcode** | HTML5 WebRTC camera APIs for mobile scanning |
-| **Backend Runtime** | **Node.js + Express.js** | Modular REST API with production static file serving |
-| **Database & Cache** | **SQLite (`better-sqlite3`)** | WAL mode, 64MB RAM cache, synchronous NORMAL, composite indexing |
-| **Cron Engine** | **node-cron** | 30-35 second loop rotating dynamic anti-proxy QR tokens and 6-digit PINs |
-| **Geofence Engine** | **Point-in-Polygon** | 4-corner auditorium boundary coordinates via Ray-Casting & Haversine |
-| **Containerization** | **Multi-stage Docker** | Multi-stage builder + runtime container ready for AWS EC2/ECS/App Runner |
+| **Frontend Framework** | React.js 18 + Vite | Single Page Application styled with Tailwind CSS |
+| **Backend Runtime** | Node.js Express (CommonJS) | Modular REST API with production static file serving |
+| **Database Engine** | **SQLite (`better-sqlite3`)** | WAL mode, synchronous NORMAL, 64MB RAM cache, busy timeout 5000ms |
+| **Storage Architecture** | Persistent NVMe Volume | Persistent `/data` volume mounted on Fly.io |
+| **Authentication** | JWT + Bcrypt | Role-Based Access Control (Super Admin, Attendance Mgr, QR Mgr) |
+| **Live QR Engine** | Randomized 30-35s rotation | UUIDv4 tokens + 6-digit PIN with dynamic/static freeze toggle |
+| **Deployment Target** | **Fly.io Persistent Volume** | Multi-stage Docker container |
+| **Repository** | GitHub Origin | `https://github.com/Mohammed-Zaahid-Yassin/-Attendance-System-.git` |
 
 ---
 
-## 🚀 Key Functional Modules
+## ⚡ Key Features (All 16 Supported)
 
-### 1. Confidential Student Registration (`/register`)
-- **Isolation Guard**: Accessible **ONLY** via the Admin's physical static QR code (`/register?key=SECRET`). Direct visits without the key show a restricted portal screen.
-- **Form Fields**:
-  - **Full Name** (compulsory)
-  - **Mobile Number** (compulsory, 10 digits)
-  - **Academic Year** (1st, 2nd, 3rd, 4th Year)
-  - **Year-Conditional Inputs**:
-    - **1st Year Students**: Asks for **Cycle** (`Physics Cycle` or `Chemistry Cycle`) and **Admission Number / USN**.
-    - **2nd, 3rd, 4th Year Students**: Asks for **Department** (from official MVJCE Whitefield engineering departments list) and **USN**.
-- **Real-Time Dynamic Student ID / Password Preview**:
-  $$\text{StudentID} = \text{NAME}[0:4] (\text{ALL CAPS}) + \text{MOBILE}[-4:]$$
-  *(e.g., "Mohammed Zaahid" + "9876543210" $\rightarrow$ `MOHA3210`)*.
-- **Confirmation View**: Shows the official Student ID with a copy button and advisory to screenshot for attendance marking.
-
-### 2. Zero-Dashboard Student Attendance (`/scan`)
-- Students have **no login accounts or passwords**.
-- Arrive directly via scanning the dynamic projector QR code (or use built-in camera scanner fallback).
-- **Inputs**:
-  1. **Student ID** (with prominent hint: *First 4 letters of your Name in CAPITAL + Last 4 digits of Mobile*).
-  2. **6-Digit PIN** (conditionally enforced based on admin toggle).
-- **Anti-Proxy Protection**:
-  - Dynamic QR rotating every ~30 seconds (or frozen in Static QR Mode).
-  - Paired 6-digit screen PIN.
-  - GPS Geofence validation (checks against auditorium polygon if enabled).
-  - Database-enforced `UNIQUE(session_id, student_id)` prevents repeat or proxy submissions.
-
-### 3. Auditorium Projector Screen (`/display`)
-- High-contrast screen designed for auditorium projectors.
-- High-resolution dynamic QR code updating every ~30 seconds (or frozen in Static QR mode).
-- Large 6-digit screen PIN.
-- Smooth countdown ring timer with multi-step color gradient (orange to yellow to red).
-- Real-time live attendance headcount updating via live polling.
-- Fullscreen toggle button.
-
-### 4. Admin Control Center (`/admin`)
-- **Session Management**: Start and stop 5 lecture/event hours.
-- **Static Registration QR**: Dedicated card to view, copy link, and download the print-ready static QR code.
-- **Auditorium 4-Corner Geofence**:
-  - Input 4 coordinates (NW, NE, SE, SW) defining the auditorium boundary.
-  - "Capture My GPS" helper button to lock in coordinates on-site.
-- **On-The-Fly Emergency Toggles**:
-  - **Toggle 1: Geofence Enable/Disable**: If attendees inside the auditorium face indoor GPS issues, admin flips this toggle to instantly bypass GPS blocking.
-  - **Toggle 2: Screen PIN Enable/Disable**: If screen visibility in the back is obstructed, admin flips this toggle to allow QR-only submission.
-- **Live Attendance Feed**: Real-time table polling, manual attendance override, and pure SQLite CSV export.
-- **Student Roster**: Filter and search registered students across all departments and academic years.
+1. **MVJCE Institutional Branding**: MVJCE crest, National Informatics Centre (NIC) attribution, and Spotlight design system.
+2. **JWT Authentication & Passwords**: Multi-admin sessions, token verification, and secure password updates.
+3. **Role-Based Access Control (RBAC)**: Dedicated permissions for Super Admin, Attendance Manager, QR Manager, and Custom staff.
+4. **Dynamic Rotating Anti-Proxy QR**: 30-35 second window randomized refresh preventing code forwarding.
+5. **Static QR Mode**: Freezes auditorium screen code for 24 hours without rotation on demand.
+6. **Unique 6-Digit Rotating PIN**: Prevents student attendance marking without auditorium visual presence.
+7. **Dual-Mode Geofencing**: Circle radius (meters) and Ray-Casting 4-corner polygon boundary validation.
+8. **Formula Student ID Generation**: Standardized ID: `NAME[0:4] + MOBILE[-4:]` (e.g. `MOHA3210`).
+9. **Permanent Static Registration QR**: High-resolution SVG/PNG QR with permanent canonical domain.
+10. **Live Attendance Stream**: Real-time counter and attendee roster feed during active sessions.
+11. **Manual Attendance Override**: Admin override for device/scan errors with immediate database sync.
+12. **Unregistered Walk-In Reconciliation**: Immediate permanent roster creation and atomic attendance recording.
+13. **Student Roster Management**: Full search, department/year filtering, student editing, and deletion.
+14. **CSV Export Engine**: Instant download with customized filename tags (Subject-Dept-Year).
+15. **Excel XLSX Export Engine**: Formatted spreadsheets with auto-sized column widths.
+16. **Auditorium Venue & Preset Management**: Persistent auditorium GPS coordinates and preset location management.
 
 ---
 
-## 🐳 Docker & AWS Deployment
+## 📦 Local Development
 
-### 1. Build and Run Locally
 ```bash
-docker compose up -d --build
-```
-The application will be running on `http://localhost:3001` (or port 80).
+# 1. Install dependencies
+npm install
+npm --prefix frontend install
+npm --prefix backend install
 
-### 2. AWS Production Hosting
-See [`AWS_DEPLOYMENT.md`](./AWS_DEPLOYMENT.md) for full AWS EC2, App Runner, ECS, and Nginx SSL setup instructions.
+# 2. Run Backend
+npm run dev
+
+# 3. Run Frontend
+cd frontend && npm run dev
+```
 
 ---
 
-## 🔑 Default Credentials & Keys
+## 🧪 Testing
 
-- **Admin Username**: `admin`
-- **Admin Password**: `admin123`
-- **Registration Secret Key**: `STATIC_REG_QR_KEY_SECRET_7890`
-- **Registration URL**: `http://localhost:5173/register?key=STATIC_REG_QR_KEY_SECRET_7890`
+```bash
+# Run comprehensive SQLite test suite
+npm --prefix backend test
+```

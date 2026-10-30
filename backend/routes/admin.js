@@ -870,12 +870,6 @@ router.post('/change-password', (req, res) => {
   const hash = bcrypt.hashSync(new_password, salt);
   db.prepare('UPDATE admins SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, admin.id);
 
-  try {
-    const { query } = require('../neon/postgres');
-    query('UPDATE admins SET password_hash = $1, updated_at = NOW() WHERE username = $2', [hash, admin.username])
-      .catch(e => console.warn('[Neon Sync Password Update Error]', e.message));
-  } catch (syncErr) {}
-
   return res.json({ success: true, message: 'Password changed successfully' });
 });
 
@@ -978,17 +972,6 @@ router.post('/users', requirePermission('manage_users'), (req, res) => {
   const newUserId = result.lastInsertRowid;
   const createdUser = db.prepare('SELECT id, username, display_name, role, permissions, is_active, created_at, updated_at FROM admins WHERE id = ?').get(newUserId);
 
-  // Sync to Neon Postgres
-  try {
-    const { query } = require('../neon/postgres');
-    query(`
-      INSERT INTO admins (username, password_hash, display_name, role, permissions, is_active, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, 1, NOW(), NOW())
-      ON CONFLICT (username) DO UPDATE
-      SET password_hash = EXCLUDED.password_hash, display_name = EXCLUDED.display_name, role = EXCLUDED.role, permissions = EXCLUDED.permissions, is_active = 1, updated_at = NOW()
-    `, [cleanUsername, hash, finalDisplayName, targetRole, JSON.stringify(targetPerms)]).catch(e => console.warn('[Neon Sync User Create]', e.message));
-  } catch (syncErr) {}
-
   return res.status(201).json({
     success: true,
     message: `User "${cleanUsername}" created successfully`,
@@ -1079,24 +1062,6 @@ router.put('/users/:id', requirePermission('manage_users'), (req, res) => {
 
   const updated = db.prepare('SELECT id, username, display_name, role, permissions, is_active, created_at, updated_at FROM admins WHERE id = ?').get(userId);
 
-  // Sync to Neon Postgres
-  try {
-    const { query } = require('../neon/postgres');
-    if (newHash) {
-      query(`
-        UPDATE admins 
-        SET password_hash = $1, display_name = $2, role = $3, permissions = $4, is_active = $5, updated_at = NOW() 
-        WHERE username = $6
-      `, [newHash, effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, target.username]).catch(e => console.warn('[Neon Sync User Update]', e.message));
-    } else {
-      query(`
-        UPDATE admins 
-        SET display_name = $1, role = $2, permissions = $3, is_active = $4, updated_at = NOW() 
-        WHERE username = $5
-      `, [effDisplayName, effRole, JSON.stringify(effPerms), effIsActive, target.username]).catch(e => console.warn('[Neon Sync User Update]', e.message));
-    }
-  } catch (syncErr) {}
-
   return res.json({
     success: true,
     message: `User "${target.username}" updated successfully`,
@@ -1136,12 +1101,6 @@ router.delete('/users/:id', requirePermission('manage_users'), (req, res) => {
   }
 
   db.prepare('DELETE FROM admins WHERE id = ?').run(userId);
-
-  // Sync delete to Neon Postgres
-  try {
-    const { query } = require('../neon/postgres');
-    query('DELETE FROM admins WHERE username = $1', [target.username]).catch(e => console.warn('[Neon Sync User Delete]', e.message));
-  } catch (syncErr) {}
 
   return res.json({ success: true, message: `User "${target.username}" deleted successfully` });
 });

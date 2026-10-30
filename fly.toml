@@ -1,0 +1,45 @@
+# fly.toml app configuration file for Spotlight Attendance SQLite Edition
+# Generated for Fly.io persistent volume deployment
+
+app = "spotlight-attendance-mvjce"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  DB_PATH = "/data/attendance.db"
+  JWT_SECRET = "attendance_secure_jwt_secret_key_2024_xyz"
+  ADMIN_USERNAME = "admin"
+  ADMIN_PASSWORD = "22Mon08Aug2005"
+  REGISTRATION_KEY = "STATIC_REG_QR_KEY_SECRET_7890"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[mounts]]
+  source = "attendance_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+[checks]
+  [checks.health]
+    port = 8080
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"

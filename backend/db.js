@@ -4,22 +4,19 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const fs = require('fs');
-const isVercel = Boolean(process.env.VERCEL);
 
 let dbPath = process.env.DB_PATH 
   ? (path.isAbsolute(process.env.DB_PATH) ? process.env.DB_PATH : path.resolve(__dirname, process.env.DB_PATH))
-  : (isVercel ? path.join('/tmp', 'attendance.db') : path.join(__dirname, 'attendance.db'));
+  : path.join(__dirname, 'attendance.db');
 
-// On Vercel serverless environment, copy bundled seed DB to /tmp if not already present
-if (isVercel && !fs.existsSync(dbPath)) {
-  const bundledDbPath = path.join(__dirname, 'attendance.db');
-  if (fs.existsSync(bundledDbPath)) {
-    try {
-      fs.copyFileSync(bundledDbPath, dbPath);
-    } catch (e) {
-      console.warn('[DB] Could not copy bundled DB to /tmp:', e.message);
-    }
+// Ensure parent directory exists for persistent volume storage (e.g. /data on Fly.io)
+try {
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+} catch (dirErr) {
+  console.warn('[DB] Could not ensure directory exists:', dirErr.message);
 }
 
 let db;

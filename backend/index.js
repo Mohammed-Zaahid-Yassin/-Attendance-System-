@@ -1,16 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('./neon/env');
+require('dotenv').config();
 const db = require('./db');
 const { startTokenRotator } = require('./cron/tokenRotator');
-const { initNeonDatabase } = require('./neon/postgres');
 
 const authRoutes = require('./routes/auth');
 const registrationRoutes = require('./routes/registration');
 const attendanceRoutes = require('./routes/attendance');
 const adminRoutes = require('./routes/admin');
-const neonRoutes = require('./neon/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,25 +57,24 @@ app.use('/api/auth', authRoutes);
 app.use('/api', registrationRoutes);
 app.use('/api', attendanceRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/neon', neonRoutes);
 
 // Fallback mounts in case proxy rewrites strip the /api prefix
 app.use('/auth', authRoutes);
 app.use('/admin', adminRoutes);
-app.use('/neon', neonRoutes);
 
 // Health check endpoint
 app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    cloud: 'Neon (Postgres, Auth, Storage, Functions, Realtime)',
-    engine: 'Neon Postgres + better-sqlite3 + node-cron',
+    cloud: 'Fly.io (Persistent Volume /data)',
+    engine: 'SQLite (better-sqlite3) + node-cron',
+    edition: 'sqlite',
     theme: 'MVJCE Spotlight'
   });
 });
 
-// Serve Frontend in Production / Docker
+// Serve Frontend in Production / Container
 const fs = require('fs');
 const clientDistPath = fs.existsSync(path.join(__dirname, 'public', 'index.html'))
   ? path.join(__dirname, 'public')
@@ -94,27 +91,17 @@ if (fs.existsSync(clientDistPath)) {
   console.log(`[Static] Serving frontend from: ${clientDistPath}`);
 }
 
-// Start Background Cron Engine (only for standalone / Docker long-running processes)
-if (!process.env.VERCEL) {
-  startTokenRotator();
-}
+// Start Background Cron Engine
+startTokenRotator();
 
-// Initialize Neon Cloud Database asynchronously
-if (!process.env.VERCEL) {
-  initNeonDatabase(db).catch(err => {
-    console.warn('[Neon Postgres] Startup initialization note:', err.message);
-  });
-}
-
-// Start Server in standalone mode (local dev, Docker)
+// Start Server in standalone mode
 let server = null;
-if (!process.env.VERCEL && require.main === module) {
-  server = app.listen(PORT, () => {
+if (require.main === module) {
+  server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`=======================================================`);
-    console.log(`🚀 Student Attendance System Backend Running on Port ${PORT}`);
-    console.log(`☁️ Cloud Platform: Neon (Postgres, Auth, Storage, Functions, Realtime)`);
-    console.log(`📁 Database: Neon Lakebase Postgres (ep-nameless-mountain-az2j1d5a)`);
-    console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 19s)`);
+    console.log(`🚀 Spotlight Attendance System (SQLite Edition) Running on Port ${PORT}`);
+    console.log(`📁 Database: SQLite (better-sqlite3 WAL mode)`);
+    console.log(`⏰ Cron Engine: node-cron (rotates token/PIN every 30-35s)`);
     console.log(`🔑 Registration Secret Key: ${process.env.REGISTRATION_KEY || 'STATIC_REG_QR_KEY_SECRET_7890'}`);
     console.log(`👤 Default Admin: username='admin'`);
     console.log(`=======================================================`);
@@ -143,7 +130,6 @@ function gracefulShutdown(signal) {
       process.exit(0);
     });
 
-    // Force exit if not closed within 10 seconds
     setTimeout(() => {
       console.error('[Process] Forceful shutdown after timeout.');
       process.exit(1);
