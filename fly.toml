@@ -1,7 +1,7 @@
 # fly.toml app configuration file for Spotlight Attendance SQLite Edition
 # Generated for Fly.io persistent volume deployment
 
-app = "spotlight-attendance-mvjce"
+app = "spotlight-attendance-sqlite"
 primary_region = "sin"
 
 [build]

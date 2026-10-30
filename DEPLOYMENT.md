@@ -75,3 +75,4 @@ docker run -d \
   --name spotlight-attendance \
   spotlight-attendance-sqlite
 ```
+

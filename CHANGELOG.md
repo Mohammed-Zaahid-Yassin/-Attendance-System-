@@ -38,3 +38,4 @@ This edition is strictly and exclusively dedicated to SQLite (`better-sqlite3`) 
   14. CSV Report Export with clean filenames and custom headers.
   15. Excel XLSX Export with formatted cell widths.
   16. Auditorium Venue Config and Multi-Location Preset Management.
+
